@@ -1,0 +1,28 @@
+# ESEKF IMU process noise + initial diagonal P (sensor / platform specific).
+# Point main experiment YAML at this file:  ekf.noise_config: config/ekf_noise/default.yaml
+#
+# Order for P0_diagonal (variances): px, py, pz, vx, vy, vz, roll, pitch, yaw (rad²),
+#   bias_accel xyz, bias_gyro xyz (rad²/s² for gyro biases — see esekf.py).
+
+imu_noise:
+  accel_std: 0.5
+  gyro_std: 0.017453292519943295
+  accel_bias_std: 0.01
+  gyro_bias_std: 0.00017453292519943295
+
+P0_diagonal:
+  - 0.0001
+  - 0.0001
+  - 0.0001
+  - 0.25
+  - 0.25
+  - 0.25
+  - 0.007615435494667032
+  - 0.007615435494667032
+  - 0.007615435494667032
+  - 0.25
+  - 0.25
+  - 0.25
+  - 0.0003046174197866681
+  - 0.0003046174197866681
+  - 0.0003046174197866681

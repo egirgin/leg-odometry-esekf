@@ -1,0 +1,70 @@
+"""
+After EKF: analysis PNGs + ``evaluation_metrics.csv`` under ``<run_dir>/<output_subdir>/``.
+
+Uses ``dataset[0]`` (single-sequence Tartanground) for merged frames and GT when plotting.
+
+``main.py`` may call this twice: ``plots/`` when debug is effective, ``analysis/`` when
+``run.debug.generate_analysis_plots`` is true — flags are independent.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any, Mapping
+
+import pandas as pd
+
+from leg_odom.eval.analysis_plots import EkfRunAnalysis
+from leg_odom.eval.ekf_step_log import sanitize_sequence_slug
+from leg_odom.eval.metrics import TrajectoryEvaluator
+from leg_odom.run.dataset_factory import build_leg_odometry_dataset
+from leg_odom.run.ekf_process import EkfProcessSummary
+
+
+def run_post_ekf_analysis_and_eval(
+    run_dir: Path,
+    resolved_cfg: Mapping[str, Any],
+    summary: EkfProcessSummary,
+    *,
+    output_subdir: str = "analysis",
+) -> None:
+    """
+    When ``summary.ekf_history_csv`` is set, write
+    ``<run_dir>/<output_subdir>/<slug>/*.png`` and one evaluation row;
+    then save ``<run_dir>/<output_subdir>/evaluation_metrics.csv``.
+
+    Use ``output_subdir="plots"`` when running from debug mode (see ``main.py``).
+    """
+    run_dir = Path(run_dir)
+    out_root = run_dir / output_subdir
+    dataset = build_leg_odometry_dataset(resolved_cfg)
+    rec0 = dataset[0]
+
+    rows: list[dict[str, Any]] = []
+    if summary.ekf_history_csv:
+        hist = pd.read_csv(summary.ekf_history_csv)
+        merged = rec0.frames
+        gt_df = rec0.position_ground_truth
+
+        slug = sanitize_sequence_slug(summary.sequence_name)
+        analysis_dir = out_root / slug
+        EkfRunAnalysis(analysis_dir).save_all(
+            hist,
+            merged=merged if merged is not None and not merged.empty else None,
+            gt_df=gt_df if not gt_df.empty else None,
+        )
+
+        row = TrajectoryEvaluator().evaluate(
+            hist,
+            gt_df,
+            sequence_name=summary.sequence_name,
+            print_report=False,
+        )
+        rows.append(row)
+
+    if rows:
+        csv_path = out_root / "evaluation_metrics.csv"
+        TrajectoryEvaluator.write_metrics_csv(csv_path, rows)
+        print(
+            f"[post_ekf] Wrote {len(rows)} evaluation row(s) and figures under {out_root} → {csv_path}"
+        )

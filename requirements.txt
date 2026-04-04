@@ -1,0 +1,8 @@
+# Runtime deps for leg_odom (conda env leg-odometry may install these already).
+numpy
+pandas
+scipy
+scikit-learn
+matplotlib
+tqdm
+PyYAML

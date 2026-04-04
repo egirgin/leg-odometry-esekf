@@ -1,0 +1,87 @@
+# Neural contact training — hyperparameters. Run leg_odom.features.preprocess_tartanground_nn first; training reads npz only.
+
+dataset:
+  kind: tartanground_split
+  # Tree of precomputed_instants.npz (output of preprocess --output-root); sequences discovered via rglob.
+  precomputed_root: /home/girgine/Documents/leg-odometry/iros/async_ekf_workspace/leg_odom/features/precomputed
+
+architecture: gru
+
+# When output.dir is null or omitted, training uses leg_odom/training/nn/pretrained_{architecture}.
+output:
+  dir: null
+
+robot:
+  kinematics: anymal
+
+features:
+  fields:
+    - est_tau_calf
+    - v_foot_body_x
+    - v_foot_body_y
+    - v_foot_body_z
+    - p_foot_body_z
+
+training:
+  epochs: 10
+  batch_size: 30
+  learning_rate: 1.0e-4
+  train_ratio: 0.7
+  val_ratio: 0.15
+  test_ratio: 0.15
+  seed: 42
+  num_workers: 0
+
+model:
+  window_size: 150
+
+# Labels: labels.method uses the same detector-type strings as contact.detector where applicable (separate YAML section).
+# Implemented: grf_threshold, gmm_hmm. Placeholders (load fails until ported): dual_hmm, ocelot.
+# model.window_size is only the NN temporal input, not GMM history_length.
+labels:
+  method: grf_threshold
+  grf_threshold:
+    force_threshold: 5.0
+    # Optional (same as contact.grf_threshold): var_at_threshold, zupt_meas_var, use_abs, ...
+
+# --- Commented alternatives (use one active ``labels`` block; copy/replace above) ---
+#
+# gmm_hmm: offline GMM+HMM + replay per sequence; history_length must be 1; no pretrained_path for NN labels.
+# labels:
+#   method: gmm_hmm
+#   gmm_hmm:
+#     mode: offline
+#     history_length: 1
+#     trans_stay: 0.99
+#     degeneracy_max_weight: 0.98
+#     random_state: 42
+#     feature_fields:
+#       - est_tau_calf
+#       - v_foot_body_x
+#       - v_foot_body_y
+#       - v_foot_body_z
+#       - p_foot_body_z
+#
+# dual_hmm: GRF+kin fusion HMM — NotImplementedError until leg_odom.contact.dual_hmm_fusion; nested keys TBD (mirror experiment contact when added).
+# labels:
+#   method: dual_hmm
+#   dual_hmm: {}
+#
+# ocelot: FSM+GMM+GLRT — NotImplementedError until leg_odom.contact.ocelot; nested keys TBD.
+# labels:
+#   method: ocelot
+#   ocelot: {}
+
+data_loading:
+  validate_frames: true
+  # verbose_load: tqdm off for npz load when true; false shows tqdm progress bar.
+  verbose_load: false
+  discovery_verbose: true
+
+visualization:
+  enabled: true
+  num_sections: 4
+  dpi: 150
+  filename: contact_nn_test_sections.png
+
+

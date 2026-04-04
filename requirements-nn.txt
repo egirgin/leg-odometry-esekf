@@ -1,0 +1,2 @@
+# Optional: PyTorch for leg_odom.training.nn (conda env leg-odometry typically includes torch).
+torch>=2.0

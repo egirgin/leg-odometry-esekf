@@ -1,0 +1,71 @@
+# Leg odometry experiment definition (leg_odom stack).
+# Full catalog of keys: config/experiment_parameters_reference.yaml
+# IMU noise + P0 diagonal: separate file (ekf.noise_config) — see config/ekf_noise/
+# Implementation thresholds (IMU clamps, Jacobian step, …): leg_odom/thresholds.py
+
+schema_version: 1
+
+run:
+  name: tartanground_dev
+  debug:
+    # stderr, per-sequence prints, post-EKF plots/. Live monitor: live_visualizer.enabled
+    enabled: false
+    # After EKF: analysis/<slug>/*.png + analysis/evaluation_metrics.csv (independent of debug.enabled)
+    generate_analysis_plots: true
+    live_visualizer:
+      enabled: false
+      sliding_window_s: 10.0
+      buffer_length: 5000
+      video_path: null
+      # null = redraw every EKF step; set e.g. 100 to cap UI refresh (effective min(hz, dataset_hz))
+      hz: 10
+
+robot:
+  kinematics: anymal
+
+dataset:
+  kind: tartanground_split
+  # Absolute path to one trajectory directory (imu.csv + *_bag.csv). Tilde ~ is allowed.
+  sequence_dir: /home/girgine/Documents/leg-odometry/iros/data_anymal
+
+contact:
+  detector: neural
+  # Alternative: grf_threshold | gmm — gmm: contact.gmm.mode offline | online (online needs pretrained_path + train_gmm .npz).
+  grf_threshold:
+    force_threshold: 5.0
+
+  gmm:
+    # offline = whole-sequence GMM per leg before EKF (requires history_length: 1 only — instant emissions).
+    # online = sliding refit + pretrained .npz; use history_length > 1 only with online + .npz.
+    mode: offline
+    # Required for online only (relative → leg_odom/training/gmm/).
+    pretrained_path: leg_odom/training/gmm/weights.npz
+    feature_fields:
+      - est_tau_calf
+      - v_foot_body_x
+      - v_foot_body_y
+      - v_foot_body_z
+      - p_foot_body_z
+    history_length: 1  # must be 1 when mode is offline
+    trans_stay: 0.99
+    fit_interval: 250
+    window_size: 500
+    degeneracy_max_weight: 0.98
+    random_state: 42
+
+  neural:
+    # Repo-relative path (resolved vs workspace root in experiment_resolved.yaml). Sidecars default next to .pt.
+    checkpoint: leg_odom/training/nn/pretrained_gru/contact_gru.pt
+    stance_probability_threshold: 0.5
+    # cpu | cuda | mps | null (auto)
+    device: null
+
+ekf:
+  # Relative to workspace root (repo dir with main.py). Copy to add sensor-specific profiles.
+  noise_config: config/ekf_noise/default.yaml
+  # Seed p,v,R from merged CSV (needs pos/vel + ori_q* columns); see experiment_parameters_reference.yaml
+  initialize_nominal_from_data: false
+
+output:
+  base_dir: output_tartanground_neural
+  include_timestamp: true

@@ -1,0 +1,86 @@
+# =============================================================================
+# leg_odom experiment YAML — parameter reference (placeholders + comments)
+# Runnable minimal template: config/default_experiment.yaml
+# IMU process noise + P0: config/ekf_noise/*.yaml (ekf.noise_config), not inline here.
+# =============================================================================
+
+schema_version: 1
+
+run:
+  name: placeholder_run_name
+  debug:
+    enabled: false
+    generate_analysis_plots: false
+    live_visualizer:
+      enabled: false
+      sliding_window_s: 60.0
+      buffer_length: 5000
+      video_path: null
+      # Target matplotlib refresh [Hz]; null = every step; capped at recording median_rate_hz
+      hz: null
+
+robot:
+  kinematics: anymal
+
+dataset:
+  kind: tartanground_split
+  # Absolute path to the trajectory directory (imu.csv + *_bag.csv). No dataset.data_root.
+  sequence_dir: /path/to/your/sequence_directory
+
+contact:
+  detector: none
+  grf_threshold:
+    force_threshold: 5.0
+    var_at_threshold: 0.0225
+    var_min: 0.0004
+    saturation_force: 350.0
+    use_abs: false
+  # GMM+HMM (single modality): package leg_odom/contact/gmm_hmm/; fit .npz via
+  #   python -m leg_odom.training.gmm.train_gmm --precomputed-root <precomputed_instants tree> [--max-sequences N]
+  # (requires python -m leg_odom.features.preprocess_tartanground_nn first; same npz as NN training)
+  gmm:
+    # offline = whole-sequence GMM per leg before EKF (requires history_length: 1 only — instant emissions).
+    # online = sliding refit + pretrained .npz; use history_length > 1 only with online + .npz.
+    mode: offline
+    # Required for online only (relative → leg_odom/training/gmm/).
+    pretrained_path: null
+    feature_fields:
+      - est_tau_calf
+      - v_foot_body_x
+      - v_foot_body_y
+      - v_foot_body_z
+      - p_foot_body_z
+    history_length: 1  # must be 1 when mode is offline
+    trans_stay: 0.99
+    fit_interval: 250
+    window_size: 500
+    degeneracy_max_weight: 0.98
+    random_state: 42
+  # CNN/GRU from leg_odom.training.nn.train_contact_nn — artifacts under training/nn/pretrained_{cnn,gru}/
+  neural:
+    # Required: repo-relative path, e.g. leg_odom/training/nn/pretrained_gru/contact_gru.pt
+    checkpoint: null
+    # Optional overrides (default: <checkpoint_stem>_meta.json and _scaler.npz next to the .pt).
+    meta_path: null
+    scaler_path: null
+    stance_probability_threshold: 0.5
+    # cpu | cuda | mps | null (auto)
+    device: null
+
+ekf:
+  # Path to YAML with imu_noise + P0_diagonal (see config/ekf_noise/default.yaml). Null = code defaults only.
+  noise_config: null
+  # If true, set nominal EKF p, v, R (and optional biases) from the merged timeline before the loop.
+  # Required columns (world FLU, first row with all finite values wins):
+  #   — Position: pos_x,pos_y,pos_z OR p_x,p_y,p_z [m]
+  #   — Velocity: vel_x,vel_y,vel_z OR v_x,v_y,v_z [m/s]
+  #   — Attitude: ori_qx, ori_qy, ori_qz, ori_qw (body quaternion, scipy xyzw)
+  # Optional on that same row: bax,bay,baz, bgx,bgy,bgz → nominal accel / gyro biases.
+  initialize_nominal_from_data: false
+
+output:
+  base_dir: output_leg_odom
+  include_timestamp: true
+
+# main.py CLI: --config only. Set run.name, dataset.sequence_dir, run.debug (mapping), etc. in YAML.
+# Use run.debug.generate_analysis_plots for post-EKF analysis/ (not output.run_analysis_after_ekf).
