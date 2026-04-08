@@ -12,7 +12,5 @@ output*/
 tests/
 /*.md
 !/README.md
-!/ARCHITECTURE.md
-!/OCELOT_LOWSTATE_REQUIREMENTS.md
 !/docs/
 !/examples/
