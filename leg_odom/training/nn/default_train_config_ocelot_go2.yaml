@@ -1,10 +1,10 @@
-# Neural contact training — hyperparameters. Run leg_odom.features.precompute_contact_instants first; training reads npz only.
+# Neural contact training — Ocelot + Go2 preset.
+# Run precompute_contact_instants first; training reads precomputed_instants.npz only.
 
 dataset:
-  kind: tartanground
-  # Alternative: ocelot (lowstate.csv tree).
+  kind: ocelot
   # Tree of precomputed_instants.npz (output of precompute_contact_instants --output-root); sequences discovered via rglob.
-  precomputed_root: /home/girgine/Documents/leg-odometry/iros/async_ekf_workspace/leg_odom/features/precomputed
+  precomputed_root: /home/girgine/Documents/leg-odometry/iros/async_ekf_workspace/leg_odom/features/precomputed_ocelot
 
 architecture: gru
 
@@ -13,8 +13,7 @@ output:
   dir: null
 
 robot:
-  kinematics: anymal
-  # For ocelot example data, use go2.
+  kinematics: go2
 
 features:
   fields:
@@ -37,13 +36,12 @@ training:
 model:
   window_size: 150
 
-# Labels: labels.method uses the same detector-type strings as contact.detector where applicable (separate YAML section).
-# Implemented: grf_threshold, gmm_hmm. Placeholders (load fails until ported): dual_hmm, ocelot.
-# model.window_size is only the NN temporal input, not GMM history_length.
+# Labels: labels.method uses the same detector-type strings as contact.detector where applicable.
+# Implemented: grf_threshold, gmm_hmm. Placeholders: dual_hmm, ocelot.
 labels:
   method: grf_threshold
   grf_threshold:
-    force_threshold: 5.0
+    force_threshold: 20.0
     # Optional (same as contact.grf_threshold): var_at_threshold, zupt_meas_var, use_abs, ...
 
 # --- Commented alternatives (use one active ``labels`` block; copy/replace above) ---
@@ -63,16 +61,6 @@ labels:
 #       - v_foot_body_y
 #       - v_foot_body_z
 #       - p_foot_body_z
-#
-# dual_hmm: GRF+kin fusion HMM — NotImplementedError until leg_odom.contact.dual_hmm_fusion; nested keys TBD (mirror experiment contact when added).
-# labels:
-#   method: dual_hmm
-#   dual_hmm: {}
-#
-# ocelot: FSM+GMM+GLRT — NotImplementedError until leg_odom.contact.ocelot; nested keys TBD.
-# labels:
-#   method: ocelot
-#   ocelot: {}
 
 data_loading:
   validate_frames: true
@@ -85,5 +73,3 @@ visualization:
   num_sections: 4
   dpi: 150
   filename: contact_nn_test_sections.png
-
-

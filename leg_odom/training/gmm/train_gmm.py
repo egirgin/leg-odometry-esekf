@@ -1,9 +1,9 @@
 """
 Fit a 2-component GMM on sliding-window features and save a pretrained ``.npz``.
 
-Reads ``precomputed_instants.npz`` bundles (same as NN contact training). Run preprocessing first::
+Reads ``precomputed_instants.npz`` bundles (same as NN contact training). Run precompute first::
 
-    python -m leg_odom.features.preprocess_tartanground_nn \\
+    python -m leg_odom.features.precompute_contact_instants \\
       --dataset-root <processed_csv_tree> --output-root <precomputed_root> --robot anymal
 
 Then::
@@ -39,11 +39,9 @@ from leg_odom.contact.gmm_hmm import (
 from leg_odom.contact.gmm_hmm.detector import GmmHmmContactDetector
 from leg_odom.contact.replay_timeline import replay_detectors_on_timeline
 from leg_odom.features.instant_spec import FULL_OFFLINE_INSTANT_FIELDS, subset_instant_columns
-from leg_odom.kinematics.anymal import AnymalKinematics
-from leg_odom.kinematics.base import BaseKinematics
-from leg_odom.kinematics.go2 import Go2Kinematics
 from leg_odom.run.dataset_factory import build_leg_odometry_dataset
-from leg_odom.run.kinematics_factory import build_kinematics_backend
+from leg_odom.run.kinematics_factory import build_kinematics_backend, build_kinematics_by_name
+from leg_odom.training.nn.dataset_kind import infer_dataset_kind_from_sequence_dir
 from leg_odom.training.nn.precomputed_io import discover_precomputed_instants_npz, load_precomputed_sequence_npz
 
 
@@ -80,15 +78,6 @@ def save_pretrained_gmm_npz(
     )
 
 
-def _build_kinematics(robot: str) -> BaseKinematics:
-    name = str(robot).lower()
-    if name == "anymal":
-        return AnymalKinematics()
-    if name == "go2":
-        return Go2Kinematics()
-    raise ValueError(f"Unsupported robot kinematics {robot!r}")
-
-
 def _slice_npz_paths(paths: list[Path], max_sequences: int | None) -> list[Path]:
     n_total = len(paths)
     if max_sequences is None:
@@ -114,7 +103,7 @@ def _parse_args() -> argparse.Namespace:
         "--precomputed-root",
         type=str,
         required=True,
-        help="Directory tree containing precomputed_instants.npz (output of preprocess_tartanground_nn)",
+        help="Directory tree containing precomputed_instants.npz (output of precompute_contact_instants)",
     )
     p.add_argument(
         "--max-sequences",
@@ -155,7 +144,7 @@ def main() -> None:
     if not paths:
         raise RuntimeError("No precomputed_instants.npz paths after --max-sequences slice")
 
-    kin = _build_kinematics(robot)
+    kin = build_kinematics_by_name(robot)
     n_legs = int(kin.n_legs)
     rk = str(robot).strip().lower()
 
@@ -205,6 +194,7 @@ def main() -> None:
         print(f"[train_gmm] skip train plot: sequence_dir not a directory: {seq_dir}")
         return
 
+    dataset_kind = infer_dataset_kind_from_sequence_dir(seq_dir)
     cfg = {
         "schema_version": 1,
         "run": {
@@ -222,7 +212,7 @@ def main() -> None:
             },
         },
         "robot": {"kinematics": robot},
-        "dataset": {"kind": "tartanground_split", "sequence_dir": str(seq_dir)},
+        "dataset": {"kind": dataset_kind, "sequence_dir": str(seq_dir)},
         "contact": {"detector": "none"},
         "ekf": {"noise_config": None, "initialize_nominal_from_data": False},
         "output": {"base_dir": ".", "include_timestamp": False},

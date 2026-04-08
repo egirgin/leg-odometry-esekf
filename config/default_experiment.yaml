@@ -25,7 +25,7 @@ robot:
   kinematics: anymal
 
 dataset:
-  kind: tartanground_split
+  kind: tartanground
   # Absolute path to one trajectory directory (imu.csv + *_bag.csv). Tilde ~ is allowed.
   sequence_dir: /home/girgine/Documents/leg-odometry/iros/data_anymal
 

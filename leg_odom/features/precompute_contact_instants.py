@@ -1,20 +1,13 @@
 """
 Precompute per-sequence ``precomputed_instants.npz`` for NN contact training (full kinematic instants + raw GRF).
 
-Run once after preparing Tartanground split trees::
+Run once after preparing source sequence trees::
 
-    python -m leg_odom.features.preprocess_tartanground_nn \\
+    python -m leg_odom.features.precompute_contact_instants \\
       --dataset-root /path/to/processed \\
       --output-root /path/to/precomputed_nn \\
+      --dataset-kind tartanground \\
       --robot anymal
-
-    python -m leg_odom.features.preprocess_tartanground_nn 
-      --dataset-root /home/girgine/Documents/leg-odometry/tartanground/processed 
-      --output-root ./leg_odom/features/precomputed_tartanground
-      --robot anymal --max-sequences 10
-
-Optional test subset: ``--max-sequences N`` with ``1 <= N <= 240`` processes only the first N sequences in
-discovery order and prints a sample resolved ``sequence_dir`` for EKF testing. Omit the flag to process all.
 
 NN training discovers ``precomputed_instants.npz`` only under ``dataset.precomputed_root`` (no CSV tree at train time);
 see :mod:`leg_odom.training.nn.precomputed_io`.
@@ -42,22 +35,11 @@ from leg_odom.features.instant_spec import (
     parse_instant_feature_fields,
 )
 from leg_odom.io.columns import FOOT_FORCE_COLS
-from leg_odom.kinematics.anymal import AnymalKinematics
 from leg_odom.kinematics.base import BaseKinematics
-from leg_odom.kinematics.go2 import Go2Kinematics
-from leg_odom.training.nn.discovery import discover_split_sequence_dirs
-from leg_odom.training.nn.tartanground_io import load_validated_frames
+from leg_odom.run.kinematics_factory import build_kinematics_by_name
+from leg_odom.training.nn.io_labels import discover_sequence_dirs, load_training_frames
 
-MANIFEST_NAME = "preprocess_manifest.json"
-
-
-def _build_kinematics(robot: str) -> BaseKinematics:
-    name = str(robot).lower()
-    if name == "anymal":
-        return AnymalKinematics()
-    if name == "go2":
-        return Go2Kinematics()
-    raise ValueError(f"Unsupported robot kinematics {robot!r} (use anymal or go2)")
+MANIFEST_NAME = "precompute_manifest.json"
 
 
 def sequence_uid_for_dir(sequence_dir: Path) -> np.int64:
@@ -86,16 +68,28 @@ def foot_forces_from_frames(frames, n_legs: int) -> npt.NDArray[np.float64]:
     return out
 
 
-def _optional_source_mtimes(sequence_dir: Path) -> dict[str, float | None]:
+def _optional_source_mtimes(sequence_dir: Path, dataset_kind: str) -> dict[str, float | None]:
     d = Path(sequence_dir).expanduser().resolve()
-    imu = d / "imu.csv"
-    bags = sorted(d.glob("*_bag.csv"))
-    out: dict[str, float | None] = {"imu_csv_mtime": None, "bag_csv_mtime": None}
-    if imu.is_file():
-        out["imu_csv_mtime"] = os.path.getmtime(imu)
-    if len(bags) == 1 and bags[0].is_file():
-        out["bag_csv_mtime"] = os.path.getmtime(bags[0])
-    return out
+    kind = str(dataset_kind).strip().lower()
+    if kind == "tartanground":
+        imu = d / "imu.csv"
+        bags = sorted(d.glob("*_bag.csv"))
+        out = {"imu_csv_mtime": None, "bag_csv_mtime": None}
+        if imu.is_file():
+            out["imu_csv_mtime"] = os.path.getmtime(imu)
+        if len(bags) == 1 and bags[0].is_file():
+            out["bag_csv_mtime"] = os.path.getmtime(bags[0])
+        return out
+    if kind == "ocelot":
+        lowstate = d / "lowstate.csv"
+        gt = d / "groundtruth.csv"
+        out = {"lowstate_csv_mtime": None, "groundtruth_csv_mtime": None}
+        if lowstate.is_file():
+            out["lowstate_csv_mtime"] = os.path.getmtime(lowstate)
+        if gt.is_file():
+            out["groundtruth_csv_mtime"] = os.path.getmtime(gt)
+        return out
+    return {"source_mtime": None}
 
 
 def write_sequence_npz(
@@ -106,6 +100,7 @@ def write_sequence_npz(
     kin: BaseKinematics,
     full_spec,
     overwrite: bool,
+    dataset_kind: str,
     validate_frames: bool = True,
 ) -> Path:
     out_rel = precomputed_npz_relpath(dataset_root, sequence_dir)
@@ -115,7 +110,12 @@ def write_sequence_npz(
     if npz_path.is_file() and not overwrite:
         return npz_path
 
-    frames = load_validated_frames(sequence_dir, verbose=False, validate=validate_frames)
+    frames = load_training_frames(
+        dataset_kind,
+        sequence_dir,
+        verbose=False,
+        validate=validate_frames,
+    )
     t_rows = len(frames)
     n_legs = kin.n_legs
     uid = sequence_uid_for_dir(sequence_dir)
@@ -136,19 +136,29 @@ def write_sequence_npz(
     save_kw["sequence_dir"] = np.array(seq_resolved, dtype=np.str_)
     save_kw["robot_kinematics"] = np.array(type(kin).__name__, dtype=np.str_)
     save_kw["field_names"] = np.array(field_joined, dtype=np.str_)
-    save_kw["source_mtimes_json"] = np.array(json.dumps(_optional_source_mtimes(sequence_dir)), dtype=np.str_)
+    save_kw["source_mtimes_json"] = np.array(
+        json.dumps(_optional_source_mtimes(sequence_dir, dataset_kind)),
+        dtype=np.str_,
+    )
 
     np.savez_compressed(npz_path, **save_kw)
     return npz_path
 
 
 def _parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Precompute precomputed_instants.npz per Tartanground split sequence")
+    p = argparse.ArgumentParser(description="Precompute precomputed_instants.npz per sequence")
     p.add_argument(
         "--dataset-root",
         type=str,
         required=True,
-        help="Processed Tartanground split tree (imu.csv + *_bag.csv); training does not read this path",
+        help="Dataset root containing sequence directories; training does not read this path directly.",
+    )
+    p.add_argument(
+        "--dataset-kind",
+        type=str,
+        default="tartanground",
+        choices=("tartanground", "ocelot"),
+        help="Sequence layout under --dataset-root.",
     )
     p.add_argument("--output-root", type=str, required=True, help="Root directory for mirrored precomputed .npz tree")
     p.add_argument("--robot", type=str, required=True, help="Kinematics model: anymal or go2")
@@ -180,13 +190,14 @@ def main() -> None:
         if n_chk < 1 or n_chk > 240:
             raise SystemExit("--max-sequences must be between 1 and 240 (inclusive)")
 
-    sequences = discover_split_sequence_dirs(dataset_root, verbose=True)
+    dataset_kind = str(args.dataset_kind).strip().lower()
+    sequences = discover_sequence_dirs(dataset_kind, dataset_root, verbose=True)
     n_total = len(sequences)
     if args.max_sequences is not None:
         n_req = int(args.max_sequences)
         if n_req > n_total:
             print(
-                f"[preprocess_tartanground_nn] warning: --max-sequences={n_req} > discovered {n_total}; "
+                f"[precompute_contact_instants] warning: --max-sequences={n_req} > discovered {n_total}; "
                 f"processing all {n_total} sequences"
             )
             n_use = n_total
@@ -194,14 +205,15 @@ def main() -> None:
             sequences = sequences[:n_req]
             n_use = n_req
         print(
-            f"[preprocess_tartanground_nn] --max-sequences requested={n_req} processing={n_use} "
+            f"[precompute_contact_instants] --max-sequences requested={n_req} processing={n_use} "
             f"(of {n_total} discovered); sample sequence_dir for EKF/testing: {sequences[0].resolve()}"
         )
-    kin = _build_kinematics(args.robot)
+    kin = build_kinematics_by_name(args.robot)
     full_spec = parse_instant_feature_fields(FULL_OFFLINE_INSTANT_FIELDS)
 
     manifest: dict[str, object] = {
         "dataset_root": str(dataset_root),
+        "dataset_kind": dataset_kind,
         "output_root": str(output_root),
         "robot": str(args.robot),
         "n_sequences": len(sequences),
@@ -214,7 +226,7 @@ def main() -> None:
     }
 
     validate_frames = not bool(args.no_validate)
-    for seq_dir in tqdm(sequences, desc="Preprocess sequences", unit="seq"):
+    for seq_dir in tqdm(sequences, desc="Precompute sequences", unit="seq"):
         npz_path = write_sequence_npz(
             sequence_dir=seq_dir,
             dataset_root=dataset_root,
@@ -222,6 +234,7 @@ def main() -> None:
             kin=kin,
             full_spec=full_spec,
             overwrite=bool(args.overwrite),
+            dataset_kind=dataset_kind,
             validate_frames=validate_frames,
         )
         key = str(seq_dir.resolve())
@@ -231,7 +244,7 @@ def main() -> None:
     manifest_path = output_root / MANIFEST_NAME
     with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
-    print(f"[preprocess_tartanground_nn] wrote manifest {manifest_path}")
+    print(f"[precompute_contact_instants] wrote manifest {manifest_path}")
 
 
 if __name__ == "__main__":

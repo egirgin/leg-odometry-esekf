@@ -4,8 +4,9 @@ Resolve and load precomputed ``precomputed_instants.npz`` bundles for NN contact
 Training discovers ``precomputed_instants.npz`` under ``dataset.precomputed_root`` only (no CSV tree at train time).
 If a bundle is missing or invalid, errors include instructions to run::
 
-    python -m leg_odom.features.preprocess_tartanground_nn \\
+    python -m leg_odom.features.precompute_contact_instants \\
       --dataset-root <path to processed CSV tree> \\
+      --dataset-kind <tartanground|ocelot> \\
       --output-root <same path as dataset.precomputed_root> \\
       --robot <anymal|go2>
 """
@@ -47,9 +48,10 @@ def precomputed_npz_relpath(dataset_root: Path, sequence_dir: Path) -> Path:
 
 
 _PREPROCESS_HINT = (
-    "Run preprocessing:\n"
-    "  python -m leg_odom.features.preprocess_tartanground_nn \\\n"
+    "Run precompute:\n"
+    "  python -m leg_odom.features.precompute_contact_instants \\\n"
     "    --dataset-root <path to processed CSV tree> \\\n"
+    "    --dataset-kind <tartanground|ocelot> \\\n"
     "    --output-root <path to dataset.precomputed_root> \\\n"
     "    --robot <anymal|go2>\n"
     "(Add --overwrite to replace existing npz files.)"

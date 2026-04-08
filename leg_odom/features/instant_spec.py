@@ -89,7 +89,7 @@ def _full_offline_instant_field_tuple() -> tuple[str, ...]:
     return exact + tuple(joint_block)
 
 
-# Full instant layout written by preprocess; training YAML ``features.fields`` must be a subset (same names).
+# Full instant layout written by precompute_contact_instants; training YAML ``features.fields`` must be a subset (same names).
 FULL_OFFLINE_INSTANT_FIELDS: tuple[str, ...] = _full_offline_instant_field_tuple()
 
 

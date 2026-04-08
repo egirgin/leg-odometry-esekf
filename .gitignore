@@ -6,7 +6,13 @@ __pycache__/
 .cursor/
 .vscode/
 
+leg_odom/features/precomputed*/
 legacy/
 output*/
 tests/
 /*.md
+!/README.md
+!/ARCHITECTURE.md
+!/OCELOT_LOWSTATE_REQUIREMENTS.md
+!/docs/
+!/examples/

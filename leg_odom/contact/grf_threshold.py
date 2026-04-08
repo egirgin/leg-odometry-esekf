@@ -154,7 +154,7 @@ def _minimal_cfg(sequence_dir: str, robot: str, dataset_kind: str) -> dict:
 def main() -> None:
     p = argparse.ArgumentParser(description="Plot GRF vs GRF-threshold contact (no EKF)")
     p.add_argument("--sequence-dir", type=str, required=True)
-    p.add_argument("--dataset-kind", type=str, default="tartanground_split")
+    p.add_argument("--dataset-kind", type=str, default="tartanground")
     p.add_argument("--robot-kinematics", type=str, default="anymal", choices=("anymal", "go2"))
     p.add_argument("--force-threshold", type=float, default=5.0)
     p.add_argument("--var-at-threshold", type=float, default=0.15**2)

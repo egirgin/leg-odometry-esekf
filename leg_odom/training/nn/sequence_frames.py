@@ -1,9 +1,7 @@
 """
-Tartanground split: merged frame load helpers and optional **array-only** GRF stance helper.
+Load merged timelines for NN precompute / training helpers, by storage layout.
 
-NN training uses :class:`~leg_odom.contact.grf_threshold.GrfThresholdContactDetector` + replay
-(see :mod:`leg_odom.training.nn.label_timelines`). :func:`grf_stance_labels` remains a small utility
-that applies ``foot_force_* >= threshold`` without constructing detectors (e.g. quick plots or tests).
+Downstream code should treat returned :class:`pandas.DataFrame` the same regardless of layout.
 """
 
 from __future__ import annotations
@@ -15,6 +13,7 @@ import numpy.typing as npt
 import pandas as pd
 
 from leg_odom.io.columns import FOOT_FORCE_COLS
+from leg_odom.io.ocelot_recording import load_prepared_ocelot
 from leg_odom.io.split_imu_bag import load_prepared_split_sequence
 from leg_odom.io.validation import validate_prepared_split_dataframe
 
@@ -33,7 +32,7 @@ def grf_stance_labels(
     (``use_abs=False``), this is ``column >= threshold``. Does not apply ``use_abs`` or other detector kwargs.
 
     Pass **either** ``frames`` (merged log with ``foot_force_*`` columns) **or**
-    ``foot_forces`` as ``(T, n_legs)`` (e.g. from precomputed npz). Missing / NaN force counts as 0 load.
+    ``foot_forces`` as ``(T, n_legs)``. Missing / NaN force counts as 0 load.
     """
     if (frames is None) == (foot_forces is None):
         raise ValueError("grf_stance_labels: provide exactly one of frames= or foot_forces=")
@@ -57,13 +56,31 @@ def grf_stance_labels(
     return (s.astype(np.float64).to_numpy() >= thr).astype(np.float64)
 
 
-def load_validated_frames(
+def load_tartanground_frames(
     sequence_dir: str | Path,
     *,
     verbose: bool = False,
     validate: bool = True,
 ) -> pd.DataFrame:
+    """Load imu+bag merged timeline (same as :class:`~leg_odom.datasets.tartanground.TartangroundDataset`)."""
     df, _, _, _ = load_prepared_split_sequence(sequence_dir, verbose=verbose, sanitize_imu=True)
+    if validate:
+        validate_prepared_split_dataframe(df)
+    return df
+
+
+def load_ocelot_frames(
+    sequence_dir: str | Path,
+    *,
+    verbose: bool = False,
+    validate: bool = True,
+) -> pd.DataFrame:
+    """Load Ocelot recording merged timeline (same as :class:`~leg_odom.datasets.ocelot.OcelotDataset`)."""
+    df, _, _gt, _accel_gc, _meta = load_prepared_ocelot(
+        sequence_dir,
+        verbose=verbose,
+        sanitize_imu=True,
+    )
     if validate:
         validate_prepared_split_dataframe(df)
     return df

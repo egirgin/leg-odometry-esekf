@@ -109,7 +109,7 @@ def build_gmm_hmm_detectors_for_replay(
 def main() -> None:
     p = argparse.ArgumentParser(description="Visualize GMM+HMM contact vs GRF (no EKF)")
     p.add_argument("--sequence-dir", type=str, required=True)
-    p.add_argument("--dataset-kind", type=str, default="tartanground_split")
+    p.add_argument("--dataset-kind", type=str, default="tartanground")
     p.add_argument("--robot-kinematics", type=str, default="anymal", choices=("anymal", "go2"))
     p.add_argument("--mode", type=str, default="offline", choices=("offline", "online"))
     p.add_argument("--pretrained-path", type=str, default="weights.npz")

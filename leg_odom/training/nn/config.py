@@ -109,11 +109,11 @@ def _validate_labels_section(lb: Mapping[str, Any]) -> None:
 def _validate_nn_train_config(cfg: Mapping[str, Any]) -> None:
     ds = _require_section(cfg, "dataset")
     if "kind" not in ds or not str(ds["kind"]).strip():
-        raise ValueError("dataset.kind is required (e.g. tartanground_split)")
+        raise ValueError("dataset.kind is required (e.g. tartanground or ocelot)")
     if "precomputed_root" not in ds or not str(ds["precomputed_root"]).strip():
         raise ValueError(
             "dataset.precomputed_root is required (tree of precomputed_instants.npz from "
-            "python -m leg_odom.features.preprocess_tartanground_nn)"
+            "python -m leg_odom.features.precompute_contact_instants --dataset-kind ...)"
         )
 
     arch = cfg.get("architecture")

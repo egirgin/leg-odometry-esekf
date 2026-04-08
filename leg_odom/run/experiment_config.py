@@ -27,7 +27,7 @@ import yaml
 EXPERIMENT_SCHEMA_VERSION = 1
 
 ALLOWED_KINEMATICS = frozenset({"anymal", "go2"})
-ALLOWED_DATASET_KINDS = frozenset({"tartanground_split", "ocelot"})
+ALLOWED_DATASET_KINDS = frozenset({"tartanground", "ocelot"})
 ALLOWED_CONTACT_DETECTORS = frozenset(
     {"none", "stub", "gmm", "neural", "dual_hmm", "ocelot", "grf_threshold"}
 )
@@ -67,7 +67,7 @@ def default_experiment_dict() -> dict[str, Any]:
         },
         "robot": {"kinematics": "anymal"},
         "dataset": {
-            "kind": "tartanground_split",
+            "kind": "tartanground",
             # Placeholder absolute path for programmatic merge-only configs; YAML must set explicitly.
             "sequence_dir": str(Path.home() / "data_anymal"),
         },
@@ -373,7 +373,7 @@ def _validate_dataset_paths(cfg: Mapping[str, Any]) -> None:
     kind = str(cfg["dataset"]["kind"]).lower()
     if not seq.is_dir():
         raise ValueError(f"dataset: sequence_dir is not a directory: {seq}")
-    if kind == "tartanground_split":
+    if kind == "tartanground":
         from leg_odom.io.split_imu_bag import discover_bag_csv_path
 
         imu = seq / "imu.csv"

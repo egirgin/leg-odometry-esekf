@@ -20,11 +20,11 @@ from tqdm import tqdm
 from leg_odom.features.instant_spec import FULL_OFFLINE_INSTANT_FIELDS, subset_instant_columns
 from leg_odom.training.nn.io_labels import compute_stance_labels
 from leg_odom.training.nn.precomputed_io import load_precomputed_sequence_npz
-from leg_odom.training.nn.tartanground_io import grf_stance_labels, load_validated_frames
+from leg_odom.training.nn.sequence_frames import grf_stance_labels, load_tartanground_frames
 
 __all__ = [
     "grf_stance_labels",
-    "load_validated_frames",
+    "load_tartanground_frames",
     "load_precomputed_subset_by_npz_paths",
     "collect_train_instant_matrix",
     "build_sliding_window_datasets",

@@ -2,7 +2,7 @@
 Train CNN or GRU contact classifiers. Hyperparameters come from YAML (see ``default_train_config.yaml``).
 
 Requires precomputed ``precomputed_instants.npz`` under ``dataset.precomputed_root`` (see
-``python -m leg_odom.features.preprocess_tartanground_nn``).
+``python -m leg_odom.features.precompute_contact_instants --dataset-kind <...>``).
 
 Example::
 
@@ -50,9 +50,8 @@ from leg_odom.features.instant_spec import (
     INSTANT_FEATURE_SPEC_VERSION,
     parse_instant_feature_fields,
 )
-from leg_odom.kinematics.anymal import AnymalKinematics
 from leg_odom.kinematics.base import BaseKinematics
-from leg_odom.kinematics.go2 import Go2Kinematics
+from leg_odom.run.kinematics_factory import build_kinematics_by_name
 from leg_odom.training.nn.config import default_train_config_path, load_nn_train_config
 from leg_odom.training.nn.data import (
     build_sliding_window_datasets,
@@ -102,15 +101,6 @@ def _split_sequence_paths(
     val = p[n_train : n_train + n_val].tolist()
     test = p[n_train + n_val :].tolist()
     return train, val, test
-
-
-def _build_kinematics(robot: str) -> BaseKinematics:
-    name = str(robot).lower()
-    if name == "anymal":
-        return AnymalKinematics()
-    if name == "go2":
-        return Go2Kinematics()
-    raise ValueError(f"Unsupported robot kinematics {robot!r}")
 
 
 def _parse_args() -> argparse.Namespace:
@@ -282,7 +272,7 @@ def main() -> None:
                 f"(re-run preprocess if you need a new column in the npz)."
             )
     spec = parse_instant_feature_fields(fields)
-    kin = _build_kinematics(str(cfg["robot"]["kinematics"]))
+    kin = build_kinematics_by_name(str(cfg["robot"]["kinematics"]))
     n_legs = int(kin.n_legs)
     window = int(cfg["model"]["window_size"])
     labels_cfg = cfg["labels"]

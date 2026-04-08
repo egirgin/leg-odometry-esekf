@@ -20,9 +20,20 @@ from tqdm import tqdm
 from leg_odom.contact.grf_threshold import build_grf_threshold_detectors_from_cfg
 from leg_odom.contact.gmm_hmm.detector import build_gmm_hmm_detectors_from_cfg
 from leg_odom.contact.replay_timeline import replay_detectors_on_timeline
-from leg_odom.datasets.tartanground import TartangroundSplitDataset
 from leg_odom.kinematics.base import BaseKinematics
+from leg_odom.run.dataset_factory import build_leg_odometry_dataset
+from leg_odom.training.nn.dataset_kind import infer_dataset_kind_from_sequence_dir
 from leg_odom.training.nn.precomputed_io import load_precomputed_sequence_npz
+
+
+def _load_recording_for_labels(sequence_dir: str | Path, *, validate_frames: bool):
+    seq_dir = Path(sequence_dir).expanduser().resolve()
+    dataset_kind = infer_dataset_kind_from_sequence_dir(seq_dir)
+    ds = build_leg_odometry_dataset(
+        {"dataset": {"kind": dataset_kind, "sequence_dir": str(seq_dir)}},
+        validate=validate_frames,
+    )
+    return ds[0]
 
 
 def _contact_cfg_for_nn_grf_labels(grf_threshold_block: Mapping[str, Any]) -> dict[str, Any]:
@@ -44,12 +55,7 @@ def stance_timeline_grf_threshold(
     ``force_threshold``).
     """
     cfg = _contact_cfg_for_nn_grf_labels(grf_threshold_cfg)
-    ds = TartangroundSplitDataset(
-        Path(sequence_dir).expanduser().resolve(),
-        validate=validate_frames,
-        verbose=False,
-    )
-    recording = ds[0]
+    recording = _load_recording_for_labels(sequence_dir, validate_frames=validate_frames)
     detectors = build_grf_threshold_detectors_from_cfg(cfg)
     n_legs = int(kin.n_legs)
     if len(detectors) != n_legs:
@@ -155,22 +161,16 @@ def stance_timeline_gmm_hmm(
 
     Parameters
     ----------
-    sequence_dir
-        Trajectory folder with ``imu.csv`` + one ``*_bag.csv`` (same as preprocess / EKF).
+        Trajectory folder containing either split CSVs (imu + bag) or Ocelot ``lowstate.csv``.
     gmm_hmm_cfg
         Contents of ``labels.gmm_hmm`` (validated: ``mode: offline``, ``history_length: 1``).
     kin
         Kinematics matching the precomputed bundle.
     validate_frames
-        Passed to :class:`~leg_odom.datasets.tartanground.TartangroundSplitDataset`.
+        Passed to :func:`~leg_odom.run.dataset_factory.build_leg_odometry_dataset` via inferred ``dataset.kind``.
     """
     cfg = _contact_cfg_for_nn_gmm_labels(gmm_hmm_cfg)
-    ds = TartangroundSplitDataset(
-        Path(sequence_dir).expanduser().resolve(),
-        validate=validate_frames,
-        verbose=False,
-    )
-    recording = ds[0]
+    recording = _load_recording_for_labels(sequence_dir, validate_frames=validate_frames)
     detectors = build_gmm_hmm_detectors_from_cfg(cfg, recording=recording, kin_model=kin)
     _t_abs, _grf, st_list, _ps = replay_detectors_on_timeline(recording.frames, kin, detectors)
     n_legs = int(kin.n_legs)

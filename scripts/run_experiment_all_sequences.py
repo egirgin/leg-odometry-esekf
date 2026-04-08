@@ -39,7 +39,7 @@ from leg_odom.run.experiment_config import (
     load_experiment_yaml,
 )
 from leg_odom.run.output_layout import prepare_run_output_dir
-from leg_odom.training.nn.discovery import discover_split_sequence_dirs
+from leg_odom.training.nn.discovery import discover_tartanground_sequence_dirs
 
 
 def _touch_subpackages() -> None:
@@ -138,7 +138,7 @@ def main(argv: list[str] | None = None) -> int:
         "--max-sequences",
         type=int,
         default=0,
-        help="If > 0, run at most this many sequences (order: discover_split_sequence_dirs sort)",
+        help="If > 0, run at most this many sequences (order: discover_tartanground_sequence_dirs sort)",
     )
     p.add_argument(
         "--fail-fast",
@@ -161,7 +161,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     try:
-        sequences = discover_split_sequence_dirs(data_root, verbose=True)
+        sequences = discover_tartanground_sequence_dirs(data_root, verbose=True)
     except FileNotFoundError as e:
         print(f"error: {e}", file=sys.stderr)
         return 2
