@@ -10,6 +10,7 @@ run:
   name: placeholder_run_name
   debug:
     enabled: false
+    # When enabled is true, post-EKF analysis/ is always written; this flag only applies when debug is off.
     generate_analysis_plots: false
     live_visualizer:
       enabled: false
@@ -24,6 +25,7 @@ robot:
 
 dataset:
   kind: tartanground_split
+  # Output path uses dataset.kind: base_dir / output_{run.name} / kind / parent(sequence_dir).name / traj
   # Absolute path to the trajectory directory (imu.csv + *_bag.csv). No dataset.data_root.
   sequence_dir: /path/to/your/sequence_directory
 
@@ -82,5 +84,5 @@ output:
   base_dir: output_leg_odom
   include_timestamp: true
 
-# main.py CLI: --config only. Set run.name, dataset.sequence_dir, run.debug (mapping), etc. in YAML.
+# main.py CLI: --config only. Set run.name, dataset.sequence_dir, dataset.kind, run.debug (mapping), etc. in YAML.
 # Use run.debug.generate_analysis_plots for post-EKF analysis/ (not output.run_analysis_after_ekf).

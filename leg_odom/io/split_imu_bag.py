@@ -4,6 +4,9 @@ Load directory layout: ``imu.csv`` + at least one ``*_bag.csv`` (kinematics).
 Merging follows ``legacy/data_loader.load_anymal_split_format`` (asof backward on
 IMU time). Foot forces stay **0-indexed** ``foot_force_0`` … ``foot_force_3`` as in
 the bag CSV (no 1-based aliases).
+
+Both CSVs must use columns ``sec`` and ``nanosec`` for timestamps (wall time in seconds +
+nanosecond remainder).
 """
 
 from __future__ import annotations
@@ -12,6 +15,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from leg_odom.io.columns import TIME_NANOSEC_COL, TIME_SEC_COL
 from leg_odom.io.ground_truth import extract_position_ground_truth
 from leg_odom.io.imu_sanitize import infer_accel_gravity_compensated, sanitize_imu_dataframe
 from leg_odom.io.timebase import build_timebase, estimate_median_sample_rate_hz
@@ -49,15 +53,19 @@ def merge_split_imu_bag(
     imu_df = pd.read_csv(imu_path)
     kin_df = pd.read_csv(kin_path)
 
-    if "time" not in imu_df.columns:
-        raise KeyError("imu.csv must contain a 'time' column for split merge")
-    imu_df = imu_df.copy()
-    imu_df["t_abs"] = imu_df["time"].astype(float)
+    for name, df in (("imu.csv", imu_df), ("*_bag.csv", kin_df)):
+        if TIME_SEC_COL not in df.columns or TIME_NANOSEC_COL not in df.columns:
+            raise KeyError(
+                f"{name} must contain '{TIME_SEC_COL}' and '{TIME_NANOSEC_COL}' "
+                f"(legacy 'time' / 'ros_sec'+'ros_nanosec' are not supported)."
+            )
 
-    if "ros_sec" not in kin_df.columns or "ros_nanosec" not in kin_df.columns:
-        raise KeyError("bag CSV must contain ros_sec and ros_nanosec")
+    imu_df = imu_df.copy()
+    t_imu = imu_df[TIME_SEC_COL].astype(float) + imu_df[TIME_NANOSEC_COL].astype(float) * 1e-9
+    imu_df["t_abs"] = t_imu - float(t_imu.iloc[0])
+
     kin_df = kin_df.copy()
-    t_kin = kin_df["ros_sec"].astype(float) + kin_df["ros_nanosec"].astype(float) * 1e-9
+    t_kin = kin_df[TIME_SEC_COL].astype(float) + kin_df[TIME_NANOSEC_COL].astype(float) * 1e-9
     kin_df["t_abs"] = t_kin - float(t_kin.iloc[0])
 
     imu_t0 = float(imu_df["t_abs"].iloc[0])
@@ -69,7 +77,7 @@ def merge_split_imu_bag(
     imu_df = imu_df.sort_values("t_abs").reset_index(drop=True)
     kin_df = kin_df.sort_values("t_abs").reset_index(drop=True)
 
-    drop_from_kin = ["time"] if "time" in kin_df.columns else []
+    drop_from_kin = [c for c in (TIME_SEC_COL, TIME_NANOSEC_COL, "time") if c in kin_df.columns]
     merged = pd.merge_asof(
         imu_df,
         kin_df.drop(columns=drop_from_kin, errors="ignore"),

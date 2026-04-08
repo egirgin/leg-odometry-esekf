@@ -7,6 +7,10 @@ multi-robot convention until a second robot needs different prefixes.
 
 from __future__ import annotations
 
+# Wall-clock columns in split CSVs (imu.csv, *_bag.csv) and EKF history CSV.
+TIME_SEC_COL = "sec"
+TIME_NANOSEC_COL = "nanosec"
+
 # Minimum IMU channels expected after CSV load (before sanitization).
 IMU_GYRO_COLS = ("gyro_x", "gyro_y", "gyro_z")
 IMU_ACCEL_COLS = ("accel_x", "accel_y", "accel_z")

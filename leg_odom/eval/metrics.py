@@ -4,6 +4,14 @@ Trajectory metrics vs embedded ground truth (ported from ``legacy/analysis_eval.
 Uses the same overlap + interpolation policy as the legacy ``evaluate`` method:
 ATE, absolute heading error, RPE (trans/rot), FPE, drift %, length error, discrete Fréchet.
 
+Evaluation time base matches merged logs and :mod:`leg_odom.eval.analysis_plots`: **prefer**
+``t_abs`` on EKF history when present; otherwise ``sec`` + ``nanosec``, so estimates align with GT
+from :func:`leg_odom.io.ground_truth.extract_position_ground_truth`.
+
+**``ate_m``** is the standard ATE: RMSE of the Euclidean position error at each synchronized
+time (2D horizontal if no Z GT; 3D if ``local_z`` and ``p_z`` are used). **``ate_x_m``** …
+**``ate_z_m``** are per-axis RMSEs for breakdown only.
+
 Results are written as a **CSV table** (one row per sequence in batch exports).
 """
 
@@ -17,6 +25,8 @@ import numpy as np
 import pandas as pd
 from scipy.interpolate import interp1d
 
+from leg_odom.io.columns import TIME_NANOSEC_COL, TIME_SEC_COL
+
 # Discrete Fréchet can recurse deeply on long paths; match legacy cap.
 if sys.getrecursionlimit() < 5000:
     sys.setrecursionlimit(5000)
@@ -25,6 +35,9 @@ EVALUATION_CSV_COLUMNS: tuple[str, ...] = (
     "sequence_name",
     "skipped",
     "ate_m",
+    "ate_x_m",
+    "ate_y_m",
+    "ate_z_m",
     "ahe_deg",
     "rpe_trans_pct",
     "rpe_rot_deg_per_m",
@@ -65,6 +78,31 @@ def match_predictions_to_gt(
 def calculate_ate_rmse_synced(gt_pos: np.ndarray, matched_est_pos: np.ndarray) -> float:
     errors = np.linalg.norm(gt_pos - matched_est_pos, axis=1)
     return float(np.sqrt(np.mean(errors**2)))
+
+
+def calculate_per_axis_rmse(
+    gt_pos: np.ndarray, matched_est_pos: np.ndarray
+) -> tuple[float, float, float]:
+    """Per-axis RMSE; z is NaN if positions are 2D (second array width 2)."""
+    d = matched_est_pos.shape[1]
+    ex = gt_pos[:, 0] - matched_est_pos[:, 0]
+    ey = gt_pos[:, 1] - matched_est_pos[:, 1]
+    rx = float(np.sqrt(np.mean(ex**2)))
+    ry = float(np.sqrt(np.mean(ey**2)))
+    if d >= 3 and gt_pos.shape[1] >= 3:
+        ez = gt_pos[:, 2] - matched_est_pos[:, 2]
+        rz = float(np.sqrt(np.mean(ez**2)))
+    else:
+        rz = float("nan")
+    return rx, ry, rz
+
+
+def calculate_ate_norm_rmse_3d(gt_pos: np.ndarray, matched_est_pos: np.ndarray) -> float:
+    """RMSE of 3D error vector length (requires 3 columns on both)."""
+    if gt_pos.shape[1] < 3 or matched_est_pos.shape[1] < 3:
+        return float("nan")
+    err = gt_pos[:, :3] - matched_est_pos[:, :3]
+    return float(np.sqrt(np.mean(np.sum(err**2, axis=1))))
 
 
 def calculate_rpe_metrics_synced(
@@ -156,24 +194,116 @@ def resample_spatially(data: np.ndarray, step: float = 0.1) -> tuple[np.ndarray,
 
 
 def _est_time_seconds(hist: pd.DataFrame) -> np.ndarray:
-    if "timestamp_sec" in hist.columns and "timestamp_nanosec" in hist.columns:
-        return (
-            hist["timestamp_sec"].to_numpy(dtype=np.float64)
-            + hist["timestamp_nanosec"].to_numpy(dtype=np.float64) * 1e-9
-        )
+    """Prefer ``t_abs`` (recording time) over wall stamps so GT ``t_abs`` overlaps."""
     if "t_abs" in hist.columns:
         return hist["t_abs"].to_numpy(dtype=np.float64)
-    raise ValueError("EKF history needs timestamp_sec/nanosec or t_abs for evaluation time base.")
+    if TIME_SEC_COL in hist.columns and TIME_NANOSEC_COL in hist.columns:
+        return (
+            hist[TIME_SEC_COL].to_numpy(dtype=np.float64)
+            + hist[TIME_NANOSEC_COL].to_numpy(dtype=np.float64) * 1e-9
+        )
+    raise ValueError(
+        f"EKF history needs t_abs or {TIME_SEC_COL!r}/{TIME_NANOSEC_COL!r} for evaluation time base."
+    )
+
+
+def _est_time_source(hist: pd.DataFrame) -> str:
+    if "t_abs" in hist.columns:
+        return "t_abs"
+    if TIME_SEC_COL in hist.columns and TIME_NANOSEC_COL in hist.columns:
+        return f"{TIME_SEC_COL}+{TIME_NANOSEC_COL}"
+    return "none"
 
 
 def _gt_time_seconds(gt_df: pd.DataFrame) -> np.ndarray:
-    if "ros_sec" in gt_df.columns and "ros_nanosec" in gt_df.columns:
-        return gt_df["ros_sec"].to_numpy(dtype=np.float64) + gt_df["ros_nanosec"].to_numpy(
-            dtype=np.float64
-        ) * 1e-9
     if "t_abs" in gt_df.columns:
         return gt_df["t_abs"].to_numpy(dtype=np.float64)
-    raise ValueError("Ground truth needs ros_sec/ros_nanosec or t_abs.")
+    if TIME_SEC_COL in gt_df.columns and TIME_NANOSEC_COL in gt_df.columns:
+        return gt_df[TIME_SEC_COL].to_numpy(dtype=np.float64) + gt_df[TIME_NANOSEC_COL].to_numpy(
+            dtype=np.float64
+        ) * 1e-9
+    raise ValueError(
+        f"Ground truth needs t_abs or {TIME_SEC_COL!r}/{TIME_NANOSEC_COL!r}."
+    )
+
+
+def _gt_time_source(gt_df: pd.DataFrame) -> str:
+    if "t_abs" in gt_df.columns:
+        return "t_abs"
+    if TIME_SEC_COL in gt_df.columns and TIME_NANOSEC_COL in gt_df.columns:
+        return f"{TIME_SEC_COL}+{TIME_NANOSEC_COL}"
+    return "none"
+
+
+def _sort_est_timeseries_for_interp(
+    est_t: np.ndarray, est_pos: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    order = np.argsort(est_t, kind="mergesort")
+    t_s = est_t[order]
+    p_s = est_pos[order]
+    # Collapse duplicate timestamps (keep last sample) for interp1d.
+    if len(t_s) < 2:
+        return t_s, p_s
+    keep = np.ones(len(t_s), dtype=bool)
+    keep[:-1] = np.abs(np.diff(t_s)) > 1e-15
+    if not np.all(keep):
+        t_u: list[float] = []
+        p_u: list[np.ndarray] = []
+        i = 0
+        while i < len(t_s):
+            j = i + 1
+            while j < len(t_s) and abs(t_s[j] - t_s[i]) <= 1e-15:
+                j += 1
+            t_u.append(float(t_s[j - 1]))
+            p_u.append(np.asarray(p_s[j - 1], dtype=np.float64))
+            i = j
+        return np.asarray(t_u, dtype=np.float64), np.stack(p_u, axis=0)
+    return t_s, p_s
+
+
+def time_alignment_report(hist: pd.DataFrame, gt_df: pd.DataFrame) -> dict[str, Any]:
+    """
+    Read-only diagnostic: time columns used, ranges, and overlap sample count.
+
+    Does not require a full EKF run beyond having ``hist`` and ``gt_df`` CSVs loaded.
+    """
+    out: dict[str, Any] = {
+        "est_time_source": _est_time_source(hist),
+        "gt_time_source": _gt_time_source(gt_df),
+        "est_t_min": None,
+        "est_t_max": None,
+        "gt_t_min": None,
+        "gt_t_max": None,
+        "overlap_duration_s": None,
+        "n_gt_in_overlap": None,
+        "error": None,
+    }
+    try:
+        est_t = _est_time_seconds(hist)
+    except ValueError as e:
+        out["error"] = str(e)
+        return out
+    try:
+        gt_t = _gt_time_seconds(gt_df)
+    except ValueError as e:
+        out["error"] = str(e)
+        return out
+
+    est_min = float(np.nanmin(est_t))
+    est_max = float(np.nanmax(est_t))
+    gt_min = float(np.nanmin(gt_t))
+    gt_max = float(np.nanmax(gt_t))
+    out["est_t_min"] = est_min
+    out["est_t_max"] = est_max
+    out["gt_t_min"] = gt_min
+    out["gt_t_max"] = gt_max
+
+    lo = max(est_min, gt_min)
+    hi = min(est_max, gt_max)
+    out["overlap_duration_s"] = max(0.0, hi - lo)
+    mask = (gt_t >= est_min) & (gt_t <= est_max)
+    out["n_gt_in_overlap"] = int(np.sum(mask))
+    return out
 
 
 def _nan_row(sequence_name: str, skipped: str) -> dict[str, Any]:
@@ -181,6 +311,9 @@ def _nan_row(sequence_name: str, skipped: str) -> dict[str, Any]:
         "sequence_name": sequence_name,
         "skipped": skipped,
         "ate_m": np.nan,
+        "ate_x_m": np.nan,
+        "ate_y_m": np.nan,
+        "ate_z_m": np.nan,
         "ahe_deg": np.nan,
         "rpe_trans_pct": np.nan,
         "rpe_rot_deg_per_m": np.nan,
@@ -250,7 +383,15 @@ class TrajectoryEvaluator:
                 print(f"[EVAL] {e}")
             return out
 
-        est_pos = hist[["p_x", "p_y"]].to_numpy(dtype=np.float64)
+        use_3d = (
+            "local_z" in gt_df.columns
+            and "p_z" in hist.columns
+            and pd.api.types.is_numeric_dtype(gt_df["local_z"])
+        )
+        if use_3d:
+            est_pos = hist[["p_x", "p_y", "p_z"]].to_numpy(dtype=np.float64)
+        else:
+            est_pos = hist[["p_x", "p_y"]].to_numpy(dtype=np.float64)
 
         try:
             gt_t = _gt_time_seconds(gt_df)
@@ -266,9 +407,14 @@ class TrajectoryEvaluator:
                 print("[EVAL] Ground truth missing local_x/local_y.")
             return out
 
-        gt_pos = gt_df[["local_x", "local_y"]].to_numpy(dtype=np.float64)
+        if use_3d:
+            gt_pos = gt_df[["local_x", "local_y", "local_z"]].to_numpy(dtype=np.float64)
+        else:
+            gt_pos = gt_df[["local_x", "local_y"]].to_numpy(dtype=np.float64)
 
-        valid_mask = (gt_t >= est_t[0]) & (gt_t <= est_t[-1])
+        est_min = float(np.min(est_t))
+        est_max = float(np.max(est_t))
+        valid_mask = (gt_t >= est_min) & (gt_t <= est_max)
         gt_t_clipped = gt_t[valid_mask]
         gt_pos_clipped = gt_pos[valid_mask]
 
@@ -278,16 +424,30 @@ class TrajectoryEvaluator:
                 print("[EVAL] Not enough overlapping points for evaluation.")
             return out
 
-        matched_est_pos = match_predictions_to_gt(gt_t_clipped, gt_pos_clipped, est_t, est_pos)
+        est_t_i, est_pos_i = _sort_est_timeseries_for_interp(est_t, est_pos)
+        if len(est_t_i) < 2:
+            out = _nan_row(sequence_name, "insufficient_est_samples")
+            if print_report:
+                print("[EVAL] Not enough distinct estimate times for interpolation.")
+            return out
 
-        ate = calculate_ate_rmse_synced(gt_pos_clipped, matched_est_pos)
-        ahe_deg = calculate_absolute_heading_error(gt_pos_clipped, matched_est_pos)
-        rpe_trans, rpe_rot = calculate_rpe_metrics_synced(
-            gt_pos_clipped, matched_est_pos, window_m=1.0
+        matched_est_pos = match_predictions_to_gt(
+            gt_t_clipped, gt_pos_clipped, est_t_i, est_pos_i
         )
 
-        gt_resampled, gt_len = resample_spatially(gt_pos_clipped, step=0.1)
-        est_resampled, est_len = resample_spatially(matched_est_pos, step=0.1)
+        ate_x, ate_y, ate_z = calculate_per_axis_rmse(gt_pos_clipped, matched_est_pos)
+        if use_3d and np.isfinite(ate_z):
+            ate = calculate_ate_norm_rmse_3d(gt_pos_clipped, matched_est_pos)
+        else:
+            ate = calculate_ate_rmse_synced(gt_pos_clipped, matched_est_pos[:, :2])
+
+        gt_xy = gt_pos_clipped[:, :2]
+        matched_xy = matched_est_pos[:, :2]
+        ahe_deg = calculate_absolute_heading_error(gt_xy, matched_xy)
+        rpe_trans, rpe_rot = calculate_rpe_metrics_synced(gt_xy, matched_xy, window_m=1.0)
+
+        gt_resampled, gt_len = resample_spatially(gt_xy, step=0.1)
+        est_resampled, est_len = resample_spatially(matched_xy, step=0.1)
 
         len_err, fpe, frechet = calculate_shape_metrics(
             gt_resampled, est_resampled, gt_len, est_len
@@ -298,6 +458,9 @@ class TrajectoryEvaluator:
             "sequence_name": sequence_name,
             "skipped": "",
             "ate_m": ate,
+            "ate_x_m": ate_x,
+            "ate_y_m": ate_y,
+            "ate_z_m": ate_z if use_3d else float("nan"),
             "ahe_deg": ahe_deg,
             "rpe_trans_pct": rpe_trans,
             "rpe_rot_deg_per_m": rpe_rot,
@@ -310,19 +473,27 @@ class TrajectoryEvaluator:
         }
 
         if print_report:
+            z_line = (
+                f"ATE Z [m]:       {ate_z:.4f}\n"
+                if use_3d and np.isfinite(ate_z)
+                else ""
+            )
             print(
                 "--- EVALUATION METRICS ---\n"
-                f"ATE [m]:         {ate:.4f}\n"
-                f"AHE [deg]:       {ahe_deg:.4f}\n"
-                f"RPE Trans [%]:   {rpe_trans:.4f}\n"
-                f"RPE Rot [deg/m]: {rpe_rot:.4f}\n"
-                f"FPE [m]:         {fpe:.4f}\n"
-                f"Drift [%]:       {drift_pct:.4f}\n"
-                f"Length Err:      {len_err:.4f}\n"
-                f"Frechet [m]:     {frechet:.4f}\n"
-                f"GT Length [m]:   {gt_len:.4f}\n"
-                f"Path Length [m]: {est_len:.4f}\n"
-                "--------------------------\n"
+                + f"ATE [m] (norm):  {ate:.4f}\n"
+                + f"ATE X [m]:       {ate_x:.4f}\n"
+                + f"ATE Y [m]:       {ate_y:.4f}\n"
+                + z_line
+                + f"AHE [deg]:       {ahe_deg:.4f}\n"
+                + f"RPE Trans [%]:   {rpe_trans:.4f}\n"
+                + f"RPE Rot [deg/m]: {rpe_rot:.4f}\n"
+                + f"FPE [m]:         {fpe:.4f}\n"
+                + f"Drift [%]:       {drift_pct:.4f}\n"
+                + f"Length Err:      {len_err:.4f}\n"
+                + f"Frechet [m]:     {frechet:.4f}\n"
+                + f"GT Length [m]:   {gt_len:.4f}\n"
+                + f"Path Length [m]: {est_len:.4f}\n"
+                + "--------------------------\n"
             )
 
         return out
@@ -353,6 +524,9 @@ def metrics_dict_to_lines(m: Mapping[str, Any]) -> list[str]:
     """Stable key order for tests / logging."""
     keys = (
         "ate_m",
+        "ate_x_m",
+        "ate_y_m",
+        "ate_z_m",
         "ahe_deg",
         "rpe_trans_pct",
         "rpe_rot_deg_per_m",
@@ -366,5 +540,8 @@ def metrics_dict_to_lines(m: Mapping[str, Any]) -> list[str]:
     lines = []
     for k in keys:
         if k in m and m.get("skipped") == "":
-            lines.append(f"{k}={m[k]:.6g}")
+            val = m[k]
+            if val is None or (isinstance(val, float) and not np.isfinite(val)):
+                continue
+            lines.append(f"{k}={val:.6g}")
     return lines

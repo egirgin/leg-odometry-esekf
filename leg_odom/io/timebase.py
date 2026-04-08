@@ -5,12 +5,12 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from leg_odom.io.columns import TIME_NANOSEC_COL, TIME_SEC_COL
 from leg_odom.thresholds import (
     TIMEBASE_DT_CLIP_MAX_S,
     TIMEBASE_DT_CLIP_MIN_S,
     TIMEBASE_MIN_POSITIVE_DT_SAMPLES,
     TIMEBASE_RATE_FALLBACK_HZ,
-    TIMEBASE_TIMESTAMP_NS_SCALE_THRESHOLD,
 )
 
 
@@ -25,30 +25,19 @@ def build_timebase(dataframe: pd.DataFrame) -> None:
     """
     Ensure ``t_abs`` (seconds from first sample) and ``dt`` exist.
 
-    Mutates ``dataframe`` in place. Matches legacy logic: supports sec+nanosec
-    pairs, or a single ``timestamp`` / ``time`` / ``t`` column.
+    Mutates ``dataframe`` in place. Requires columns ``sec`` and ``nanosec`` (epoch seconds +
+    fractional part in nanoseconds), matching split ``imu.csv`` / ``*_bag.csv`` exports.
 
     Clamps and fallbacks use :mod:`leg_odom.thresholds`.
     """
-    cols = {c.lower(): c for c in dataframe.columns}
-
-    if "timestamp_sec" in cols and "timestamp_nanosec" in cols:
-        s = pd.to_numeric(dataframe[cols["timestamp_sec"]], errors="coerce").astype(float)
-        ns = pd.to_numeric(dataframe[cols["timestamp_nanosec"]], errors="coerce").astype(float)
-        t = s + ns * 1e-9
-    elif "sec" in cols and "nanosec" in cols:
-        s = pd.to_numeric(dataframe[cols["sec"]], errors="coerce").astype(float)
-        ns = pd.to_numeric(dataframe[cols["nanosec"]], errors="coerce").astype(float)
-        t = s + ns * 1e-9
-    else:
-        cand = next((cols[k] for k in ("timestamp", "time", "t") if k in cols), None)
-        if cand is None:
-            raise KeyError(
-                "No time columns found. Need 't', 'timestamp', or a 'sec'+'nanosec' pair."
-            )
-        vals = pd.to_numeric(dataframe[cand], errors="coerce")
-        scale = 1e9 if float(vals.max()) > TIMEBASE_TIMESTAMP_NS_SCALE_THRESHOLD else 1.0
-        t = vals.astype(float) / scale
+    if TIME_SEC_COL not in dataframe.columns or TIME_NANOSEC_COL not in dataframe.columns:
+        raise KeyError(
+            f"Merged dataframe must contain '{TIME_SEC_COL}' and '{TIME_NANOSEC_COL}' "
+            "(not time/ros_sec/timestamp_* aliases)."
+        )
+    s = pd.to_numeric(dataframe[TIME_SEC_COL], errors="coerce").astype(float)
+    ns = pd.to_numeric(dataframe[TIME_NANOSEC_COL], errors="coerce").astype(float)
+    t = s + ns * 1e-9
 
     dataframe["t_abs"] = t - float(t.iloc[0])
 

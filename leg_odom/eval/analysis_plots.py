@@ -12,11 +12,13 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from typing import Any, Mapping
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from leg_odom.io.columns import TIME_NANOSEC_COL, TIME_SEC_COL
 from leg_odom.io.ground_truth import extract_position_ground_truth
 
 
@@ -29,10 +31,12 @@ def _ensure_dir(path: Path) -> Path:
 def _hist_time(hist: pd.DataFrame) -> np.ndarray:
     if "t_abs" in hist.columns:
         return hist["t_abs"].to_numpy(dtype=np.float64)
-    if "timestamp_sec" in hist.columns:
-        ns = hist["timestamp_nanosec"].to_numpy(dtype=np.float64) if "timestamp_nanosec" in hist.columns else 0.0
-        return hist["timestamp_sec"].to_numpy(dtype=np.float64) + ns * 1e-9
-    raise ValueError("History DataFrame needs t_abs or timestamp_sec.")
+    if TIME_SEC_COL in hist.columns and TIME_NANOSEC_COL in hist.columns:
+        return (
+            hist[TIME_SEC_COL].to_numpy(dtype=np.float64)
+            + hist[TIME_NANOSEC_COL].to_numpy(dtype=np.float64) * 1e-9
+        )
+    raise ValueError(f"History DataFrame needs t_abs or {TIME_SEC_COL!r}/{TIME_NANOSEC_COL!r}.")
 
 
 def _interp_columns(raw_t: np.ndarray, raw_y: np.ndarray, t_query: np.ndarray) -> np.ndarray:
@@ -64,10 +68,11 @@ class EkfRunAnalysis:
         self.output_path = Path(output_path)
         self.output_path.mkdir(parents=True, exist_ok=True)
 
-    def _save_fig(self, fig: plt.Figure, filename: str) -> None:
+    def _save_fig(self, fig: plt.Figure, filename: str, *, tight_layout: bool = True) -> None:
         path = self.output_path / f"{filename}.png"
-        fig.tight_layout()
-        fig.savefig(path, dpi=200)
+        if tight_layout:
+            fig.tight_layout()
+        fig.savefig(path, dpi=200, bbox_inches="tight")
         plt.close(fig)
 
     def plot_states(self, hist: pd.DataFrame) -> None:
@@ -251,9 +256,9 @@ class EkfRunAnalysis:
         if gt_df is not None and not gt_df.empty and "local_z" in gt_df.columns:
             try:
                 gt_t = (
-                    gt_df["ros_sec"].to_numpy(dtype=np.float64)
-                    + gt_df["ros_nanosec"].to_numpy(dtype=np.float64) * 1e-9
-                    if "ros_sec" in gt_df.columns
+                    gt_df[TIME_SEC_COL].to_numpy(dtype=np.float64)
+                    + gt_df[TIME_NANOSEC_COL].to_numpy(dtype=np.float64) * 1e-9
+                    if TIME_SEC_COL in gt_df.columns and TIME_NANOSEC_COL in gt_df.columns
                     else gt_df["t_abs"].to_numpy(dtype=np.float64)
                 )
                 gz = gt_df["local_z"].to_numpy(dtype=np.float64)
@@ -277,11 +282,143 @@ class EkfRunAnalysis:
 
         self._save_fig(fig, "trajectory_xy_z")
 
+    def plot_evaluation_metrics(self, m: Mapping[str, Any]) -> None:
+        """
+        One figure, multiple subplots: scalar metrics from :class:`~leg_odom.eval.metrics.TrajectoryEvaluator`.
+
+        Skipped runs show a short message instead of bars.
+        """
+        skipped = str(m.get("skipped", "") or "")
+        fig = plt.figure(figsize=(10, 9))
+        gs = fig.add_gridspec(3, 3, height_ratios=[2.0, 1.2, 1.4], hspace=0.45, wspace=0.4)
+
+        if skipped:
+            ax = fig.add_subplot(gs[:, :])
+            ax.text(
+                0.5,
+                0.5,
+                f"Evaluation skipped\n{skipped}",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+                fontsize=12,
+            )
+            ax.set_axis_off()
+            seq = m.get("sequence_name", "")
+            fig.suptitle(f"Trajectory metrics{f' — {seq}' if seq else ''}", fontsize=12)
+            self._save_fig(fig, "evaluation_metrics", tight_layout=False)
+            return
+
+        def _f(key: str) -> float | None:
+            v = m.get(key)
+            try:
+                x = float(v)
+            except (TypeError, ValueError):
+                return None
+            return x if np.isfinite(x) else None
+
+        # Row 0: position RMSE [m] — overall ATE + per-axis breakdown
+        ax0 = fig.add_subplot(gs[0, :])
+        pos_labels: list[str] = []
+        pos_vals: list[float] = []
+        for lab, key in (
+            ("ATE RMSE", "ate_m"),
+            ("ATE X", "ate_x_m"),
+            ("ATE Y", "ate_y_m"),
+            ("ATE Z", "ate_z_m"),
+        ):
+            fv = _f(key)
+            if fv is not None:
+                pos_labels.append(lab)
+                pos_vals.append(fv)
+        if pos_vals:
+            x = np.arange(len(pos_labels))
+            ax0.bar(x, pos_vals, color="C0", edgecolor="black", linewidth=0.4)
+            ax0.set_xticks(x)
+            ax0.set_xticklabels(pos_labels, rotation=20, ha="right")
+        ax0.set_ylabel("RMSE [m]")
+        ax0.set_title("Position error (ATE RMSE = Euclidean RMSE over time)")
+        ax0.grid(True, axis="y", alpha=0.35)
+
+        # Row 1: heading + relative pose (separate axes — different units)
+        ahe = _f("ahe_deg")
+        ax1 = fig.add_subplot(gs[1, 0])
+        if ahe is not None:
+            ax1.bar([0], [ahe], color="C1", edgecolor="black", linewidth=0.4)
+        ax1.set_xticks([0])
+        ax1.set_xticklabels(["AHE"])
+        ax1.set_ylabel("[deg]")
+        ax1.set_title("Absolute heading error")
+        ax1.grid(True, axis="y", alpha=0.35)
+
+        rpt = _f("rpe_trans_pct")
+        ax2 = fig.add_subplot(gs[1, 1])
+        if rpt is not None:
+            ax2.bar([0], [rpt], color="C2", edgecolor="black", linewidth=0.4)
+        ax2.set_xticks([0])
+        ax2.set_xticklabels(["RPE trans"])
+        ax2.set_ylabel("[%]")
+        ax2.set_title("RPE translation")
+        ax2.grid(True, axis="y", alpha=0.35)
+
+        rpr = _f("rpe_rot_deg_per_m")
+        ax3 = fig.add_subplot(gs[1, 2])
+        if rpr is not None:
+            ax3.bar([0], [rpr], color="C3", edgecolor="black", linewidth=0.4)
+        ax3.set_xticks([0])
+        ax3.set_xticklabels(["RPE rot"])
+        ax3.set_ylabel("[deg/m]")
+        ax3.set_title("RPE rotation")
+        ax3.grid(True, axis="y", alpha=0.35)
+
+        # Row 2: path distances [m] vs normalized / percent metrics
+        ax4 = fig.add_subplot(gs[2, 0:2])
+        d_labels = ["FPE", "Fréchet", "GT len", "Est len"]
+        d_keys = ["fpe_m", "frechet_m", "gt_length_m", "est_length_m"]
+        d_vals = [_f(k) for k in d_keys]
+        d_ok = [(lb, v) for lb, v in zip(d_labels, d_vals) if v is not None]
+        if d_ok:
+            lbs, vs = zip(*d_ok)
+            yp = np.arange(len(lbs))
+            ax4.barh(yp, vs, color="C4", edgecolor="black", linewidth=0.4)
+            ax4.set_yticks(yp)
+            ax4.set_yticklabels(lbs)
+        ax4.set_xlabel("[m]")
+        ax4.set_title("Path length / endpoint / shape (meters)")
+        ax4.grid(True, axis="x", alpha=0.35)
+
+        ax5 = fig.add_subplot(gs[2, 2])
+        le = _f("length_err")
+        dr = _f("drift_pct")
+        xs = []
+        ys = []
+        labs = []
+        if le is not None:
+            xs.append(0)
+            ys.append(le)
+            labs.append("Len err")
+        if dr is not None:
+            xs.append(1)
+            ys.append(dr)
+            labs.append("Drift %")
+        if ys:
+            ax5.bar(xs, ys, color=["C5", "C6"][: len(ys)], edgecolor="black", linewidth=0.4)
+            ax5.set_xticks(xs)
+            ax5.set_xticklabels(labs, rotation=15, ha="right")
+        ax5.set_title("Normalized / drift")
+        ax5.grid(True, axis="y", alpha=0.35)
+
+        seq = m.get("sequence_name", "")
+        fig.suptitle(f"Trajectory metrics{f' — {seq}' if seq else ''}", fontsize=12)
+        self._save_fig(fig, "evaluation_metrics", tight_layout=False)
+
     def save_all(
         self,
         hist: pd.DataFrame,
         merged: pd.DataFrame | None = None,
         gt_df: pd.DataFrame | None = None,
+        *,
+        metrics_row: Mapping[str, Any] | None = None,
     ) -> None:
         """Write the full PNG bundle into ``self.output_path``."""
         self.plot_states(hist)
@@ -289,6 +426,8 @@ class EkfRunAnalysis:
             self.plot_contacts_grf(hist, merged)
         self.plot_contacts_foot_velocity_world(hist)
         self.plot_trajectory_xy_and_z(hist, gt_df)
+        if metrics_row is not None:
+            self.plot_evaluation_metrics(metrics_row)
 
 
 def save_analysis_bundle(
@@ -296,9 +435,13 @@ def save_analysis_bundle(
     merged: pd.DataFrame | None,
     gt_df: pd.DataFrame | None,
     output_dir: Path,
+    *,
+    metrics_row: Mapping[str, Any] | None = None,
 ) -> None:
     """Functional wrapper: :class:`EkfRunAnalysis` on ``output_dir``."""
-    EkfRunAnalysis(output_dir).save_all(hist, merged=merged, gt_df=gt_df)
+    EkfRunAnalysis(output_dir).save_all(
+        hist, merged=merged, gt_df=gt_df, metrics_row=metrics_row
+    )
 
 
 def _load_hist(path: Path) -> pd.DataFrame:

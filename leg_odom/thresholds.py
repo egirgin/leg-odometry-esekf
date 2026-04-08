@@ -76,13 +76,6 @@ Minimum count of positive ``dt`` values required to trust median-based rate esti
 **Used by:** :func:`leg_odom.io.timebase.estimate_median_sample_rate_hz`.
 """
 
-TIMEBASE_TIMESTAMP_NS_SCALE_THRESHOLD = 1e12
-"""
-If max raw time value exceeds this, values are treated as **nanoseconds** and scaled by ``1e-9``.
-
-**Used by:** :func:`leg_odom.io.timebase.build_timebase`.
-"""
-
 TIMEBASE_DT_CLIP_MIN_S = 1e-4
 TIMEBASE_DT_CLIP_MAX_S = 0.2
 """

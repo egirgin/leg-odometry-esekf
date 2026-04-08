@@ -96,7 +96,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description=(
             "Tartanground / ANYmal leg odometry (leg_odom). "
-            "Requires --config (experiment YAML); run.name and dataset.sequence_dir must be set in the file."
+            "Requires --config (experiment YAML); run.name and dataset.sequence_dir must be set."
         ),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )

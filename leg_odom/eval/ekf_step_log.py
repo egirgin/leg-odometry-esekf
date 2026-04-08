@@ -2,7 +2,7 @@
 Per-timestep ESEKF + contact bookkeeping for evaluation (CSV export).
 
 Mirrors the intent of ``legacy/helpers.create_log_entry`` with a fixed column set suitable
-for downstream metrics: time, nominal state, bias estimates, error-state diagonal variances,
+for downstream metrics: ``sec``/``nanosec``/``t_abs``, nominal state, bias estimates, error-state diagonal variances,
 per-leg contact / ZUPT measurement variance, batch NIS, and foot velocities in world.
 
 **Error-state diagonal** columns follow :class:`~leg_odom.filters.esekf.ErrorStateEkf`
@@ -21,6 +21,7 @@ import pandas as pd
 from scipy.spatial.transform import Rotation
 
 from leg_odom.filters.esekf import ErrorStateEkf
+from leg_odom.io.columns import TIME_NANOSEC_COL, TIME_SEC_COL
 
 _NLEGS = 4
 
@@ -97,8 +98,8 @@ def build_ekf_step_log_row(
     eul = Rotation.from_matrix(ekf.R).as_euler("zyx", degrees=True)
 
     row: dict[str, Any] = {
-        "timestamp_sec": float(timeline_row.get("timestamp_sec", float("nan"))),
-        "timestamp_nanosec": float(timeline_row.get("timestamp_nanosec", float("nan"))),
+        TIME_SEC_COL: float(timeline_row.get(TIME_SEC_COL, float("nan"))),
+        TIME_NANOSEC_COL: float(timeline_row.get(TIME_NANOSEC_COL, float("nan"))),
         "t_abs": float(timeline_row["t_abs"]),
         "p_x": float(ekf.p[0]),
         "p_y": float(ekf.p[1]),
@@ -164,8 +165,8 @@ def build_ekf_step_log_row(
 def ekf_step_log_columns(n_legs: int = _NLEGS) -> tuple[str, ...]:
     """Stable CSV column order."""
     base = (
-        "timestamp_sec",
-        "timestamp_nanosec",
+        TIME_SEC_COL,
+        TIME_NANOSEC_COL,
         "t_abs",
         "p_x",
         "p_y",

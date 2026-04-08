@@ -10,7 +10,8 @@ run:
   debug:
     # stderr, per-sequence prints, post-EKF plots/. Live monitor: live_visualizer.enabled
     enabled: false
-    # After EKF: analysis/<slug>/*.png + analysis/evaluation_metrics.csv (independent of debug.enabled)
+    # Post-EKF analysis/*.png + evaluation_metrics.csv when true. When enabled: true above,
+    # analysis figures always run regardless of this flag (toggle only applies with debug off).
     generate_analysis_plots: true
     live_visualizer:
       enabled: false

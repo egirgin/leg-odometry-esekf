@@ -26,7 +26,7 @@ import pandas as pd
 from matplotlib.patches import Rectangle
 from scipy.spatial.transform import Rotation
 
-from leg_odom.io.columns import IMU_BODY_QUAT_COLS
+from leg_odom.io.columns import IMU_BODY_QUAT_COLS, TIME_NANOSEC_COL, TIME_SEC_COL
 
 SLIDING_TIME_WINDOW_S = 60.0
 
@@ -66,10 +66,10 @@ def _unwrap_heading_series(yaw: np.ndarray) -> np.ndarray:
 def _gt_time_array(gt_df: pd.DataFrame) -> np.ndarray | None:
     if gt_df is None or gt_df.empty:
         return None
-    if "ros_sec" in gt_df.columns and "ros_nanosec" in gt_df.columns:
+    if TIME_SEC_COL in gt_df.columns and TIME_NANOSEC_COL in gt_df.columns:
         return (
-            gt_df["ros_sec"].to_numpy(dtype=np.float64)
-            + gt_df["ros_nanosec"].to_numpy(dtype=np.float64) * 1e-9
+            gt_df[TIME_SEC_COL].to_numpy(dtype=np.float64)
+            + gt_df[TIME_NANOSEC_COL].to_numpy(dtype=np.float64) * 1e-9
         )
     if "t_abs" in gt_df.columns:
         return gt_df["t_abs"].to_numpy(dtype=np.float64)

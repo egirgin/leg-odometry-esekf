@@ -7,7 +7,7 @@ This is **user-facing experiment configuration**, distinct from :mod:`leg_odom.t
 **How this file is laid out (top to bottom)**
 
 1. Defaults + merge — fill omitted YAML keys; :func:`load_experiment_yaml` chains in file-level checks.
-2. Load — parse YAML, require ``run.name`` / ``dataset.sequence_dir`` in the **file**, then merge.
+2. Load — parse YAML, require ``run.name`` and ``dataset.sequence_dir`` in the **file** (``dataset.kind`` must be valid; defaults apply if omitted), then merge.
 3. Validate — schema/enums/types; optional ``strict_paths`` touches disk (sequence dir, noise YAML).
 4. Resolve paths — canonicalize absolute ``dataset.sequence_dir`` and relative ``ekf.noise_config`` for snapshots.
 5. Debug accessors — small readers for ``main.py`` / EKF (effective flags vs YAML-only toggles).
@@ -34,7 +34,7 @@ ALLOWED_CONTACT_DETECTORS = frozenset(
 
 # --- Defaults + deep merge --------------------------------------------------------------------
 # _deep_merge + default_experiment_dict + merge_experiment_defaults. In-memory only; for disk use
-# load_experiment_yaml (which enforces explicit run.name / dataset.sequence_dir in the file).
+# load_experiment_yaml (which enforces explicit run.name and dataset.sequence_dir in the file).
 
 
 def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
@@ -98,8 +98,8 @@ def merge_experiment_defaults(loaded: Mapping[str, Any]) -> dict[str, Any]:
 
 def _validate_yaml_file_has_run_and_dataset(raw: Mapping[str, Any] | None) -> None:
     """
-    Require explicit ``run.name`` and ``dataset.sequence_dir`` in the file (not only
-    merge defaults). :func:`merge_experiment_defaults` does not enforce this.
+    Require explicit ``run.name`` and ``dataset.sequence_dir`` in the file
+    (not only merge defaults). :func:`merge_experiment_defaults` does not enforce this.
     """
     if raw is None or not isinstance(raw, Mapping):
         raise ValueError(
@@ -118,7 +118,7 @@ def _validate_yaml_file_has_run_and_dataset(raw: Mapping[str, Any] | None) -> No
 
 
 def load_experiment_yaml(path: str | Path) -> dict[str, Any]:
-    """Parse YAML from disk, require explicit run/dataset keys, then merge defaults."""
+    """Parse YAML from disk, require explicit ``run.name`` and ``dataset.sequence_dir``, then merge defaults."""
     p = Path(path).expanduser().resolve()
     if not p.is_file():
         raise FileNotFoundError(f"Experiment config not found: {p}")
@@ -445,14 +445,23 @@ def resolve_contact_neural_paths(cfg: dict[str, Any], workspace_root: Path) -> N
 
 # --- Debug / analysis / live visualizer (read merged cfg) --------------------------------------
 #
-#   generate_analysis_plots  → post-EKF ``analysis/`` (independent of run.debug.enabled).
+#   generate_analysis_plots  → post-EKF ``analysis/`` when true in YAML **and** debug is off.
+#       When ``debug_effective_from_cli`` is true, analysis figures are **always** produced
+#       (``generate_analysis_plots_enabled`` returns true) regardless of the YAML flag.
 #   debug_enabled            → YAML run.debug.enabled only.
 #   debug_effective_from_cli → above OR programmatic cli_debug (tests / future CLI).
 #   live_visualizer_effective → effective debug AND live_visualizer.enabled (matplotlib loop).
 
 
-def generate_analysis_plots_enabled(cfg: Mapping[str, Any]) -> bool:
-    """True if ``run.debug.generate_analysis_plots`` (post-EKF ``analysis/`` tree)."""
+def generate_analysis_plots_enabled(
+    cfg: Mapping[str, Any], *, cli_debug: bool = False
+) -> bool:
+    """
+    True if post-EKF ``analysis/`` should run: effective debug **or**
+    ``run.debug.generate_analysis_plots`` in YAML.
+    """
+    if debug_effective_from_cli(cfg, cli_debug=cli_debug):
+        return True
     d = cfg.get("run", {}).get("debug")
     if not isinstance(d, Mapping):
         return False
