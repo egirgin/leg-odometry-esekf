@@ -9,6 +9,55 @@ This package fits **contact classifiers** and **GMM+HMM** weights from **precomp
 | [`nn/`](nn/) | CNN/GRU training, precomputed I/O, labels via detector **replay**, configs. |
 | [`gmm/`](gmm/) | Offline fit of 2-component GMM (+ optional post-train replay plot). |
 
+## UML class diagrams (Mermaid)
+
+**Neural track** — npz I/O (`load_precomputed_sequence_npz`, `discover_precomputed_instants_npz` in [`precomputed_io.py`](nn/precomputed_io.py)), PyTorch `Dataset` windows, and `nn.Module` heads. GMM training ([`train_gmm`](gmm/train_gmm.py)) is mostly procedural but uses the same bundle loader.
+
+```mermaid
+classDiagram
+    direction TB
+    class FileNotFoundError {
+        <<builtin>>
+    }
+    class PrecomputedNnLoadError
+    FileNotFoundError <|-- PrecomputedNnLoadError
+    class PrecomputedSequenceBundle {
+        <<dataclass>>
+        +npz_path Path
+        +sequence_uid int64
+        +foot_forces ndarray
+        +instants_by_leg dict
+        +field_names tuple
+    }
+    class TorchDataset {
+        <<PyTorch Dataset>>
+        +__getitem__() __len__()
+    }
+    class SlidingWindowDatasetCnn {
+        +window_size int
+        +__getitem__() window, label
+    }
+    class SlidingWindowDatasetGru {
+        +window_size int
+    }
+    class TorchModule {
+        <<torch.nn.Module>>
+        +forward(x) Tensor
+    }
+    class ContactCNN
+    class ContactGRU
+    TorchDataset <|-- SlidingWindowDatasetCnn
+    TorchDataset <|-- SlidingWindowDatasetGru
+    TorchModule <|-- ContactCNN
+    TorchModule <|-- ContactGRU
+    PrecomputedSequenceBundle ..> SlidingWindowDatasetCnn : stacked features, labels
+    PrecomputedSequenceBundle ..> SlidingWindowDatasetGru : stacked features, labels
+    ContactCNN ..> TorchModule : train_contact_nn
+    ContactGRU ..> TorchModule : train_contact_nn
+```
+
+Package-wide diagrams: [docs/CLASS_DIAGRAM.md](../../docs/CLASS_DIAGRAM.md).
+
 ## Dependency: precompute first
 
 Both tracks expect a directory tree of **`precomputed_instants.npz`** files (see [`leg_odom/features/README.md`](../features/README.md)).
@@ -86,3 +135,4 @@ python -m leg_odom.eval.analysis_plots --help
 - [Features README](../features/README.md) — precompute CLI.
 - [Contact README](../contact/README.md) — how detectors consume weights at runtime.
 - [Repository README](../../README.md) — main EKF entrypoint.
+- [CLASS_DIAGRAM.md](../../docs/CLASS_DIAGRAM.md) — datasets, contact ABC, EKF, factories.

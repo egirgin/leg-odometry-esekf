@@ -4,6 +4,59 @@
 
 The EKF builds detectors via [`leg_odom/run/contact_factory.py`](../run/contact_factory.py) from experiment YAML. The **same** detector classes and **replay** utilities are used by training label pipelines and optional visualization CLIs **without** running the full EKF loop.
 
+## UML class diagrams (Mermaid)
+
+**Types and detector hierarchy**
+
+```mermaid
+classDiagram
+    direction TB
+    class ContactEstimate {
+        <<NamedTuple>>
+        +stance bool
+        +p_stance float
+        +zupt_meas_var float
+    }
+    class ContactDetectorStepInput {
+        <<dataclass>>
+        +grf_n float
+        +p_foot_body ndarray
+        +v_foot_body ndarray
+        +q_leg dq_leg tau_leg ndarray
+        +gyro_body_corrected ndarray
+        +accel_body_corrected ndarray
+    }
+    class BaseContactDetector {
+        <<abstract>>
+        +feature_dim int
+        +history_length int
+        +update(step) ContactEstimate
+        +reset()
+        +last_zupt_R_foot ndarray
+    }
+    class GrfThresholdContactDetector
+    class GmmHmmContactDetector
+    class NeuralContactDetector
+    class NeuralSharedRuntime {
+        +spec InstantFeatureSpec
+        +forward_window(rows) float
+    }
+    class TwoStateGaussianHMM {
+        +filter_step(log_emiss)
+    }
+    BaseContactDetector <|-- GrfThresholdContactDetector
+    BaseContactDetector <|-- GmmHmmContactDetector
+    BaseContactDetector <|-- NeuralContactDetector
+    BaseContactDetector ..> ContactDetectorStepInput : update consumes
+    BaseContactDetector ..> ContactEstimate : update returns
+    NeuralContactDetector o-- NeuralSharedRuntime : shared per robot run
+    GmmHmmContactDetector ..> TwoStateGaussianHMM : offline/online filter
+```
+
+**Replay helpers** — [`replay_timeline.replay_detectors_on_timeline`](replay_timeline.py) runs a list of `BaseContactDetector` instances over a merged timeline (no class diagram: functions + `pandas.DataFrame`).
+
+Full-package UML: [docs/CLASS_DIAGRAM.md](../../docs/CLASS_DIAGRAM.md).
+
 ## Core API
 
 | Module | Role |
@@ -58,3 +111,4 @@ Running the CLIs above **does not** produce `ekf_history_*.csv`; they only valid
 - [Training README](../training/README.md) — producing GMM/NN weights.
 - [Repository README](../../README.md) — full EKF run and outputs.
 - [ARCHITECTURE.md](../../ARCHITECTURE.md) — factory keys and detector modes table.
+- [CLASS_DIAGRAM.md](../../docs/CLASS_DIAGRAM.md) — datasets, kinematics, factories, pipeline flow.

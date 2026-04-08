@@ -1,6 +1,6 @@
 # Leg odometry: class and dependency diagrams
 
-Mermaid diagrams for the **`leg_odom`** package. For folder-level narrative, see [ARCHITECTURE.md](../ARCHITECTURE.md).
+Mermaid diagrams for the **`leg_odom`** package. For folder-level narrative, see [ARCHITECTURE.md](../ARCHITECTURE.md). **Submodule-focused UML:** [features](../leg_odom/features/README.md#uml-class-diagrams-mermaid), [training](../leg_odom/training/README.md#uml-class-diagrams-mermaid), [contact](../leg_odom/contact/README.md#uml-class-diagrams-mermaid).
 
 ## Core classes (simplified UML)
 

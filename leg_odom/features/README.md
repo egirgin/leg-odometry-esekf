@@ -43,6 +43,41 @@ Same rules as [`leg_odom.training.nn.discovery`](../training/nn/discovery.py).
 - **`precomputed_instants.npz`** per sequence: `instants_leg*`, `foot_forces`, `sequence_dir`, `robot_kinematics`, format/spec version fields (see [`leg_odom.training.nn.precomputed_io`](../training/nn/precomputed_io.py)).
 - **`precompute_manifest.json`**: roots, counts, per-sequence npz paths and UIDs.
 
+## UML class diagrams (Mermaid)
+
+**Spec and shared input contract** — instant field names match [`ContactDetectorStepInput`](../contact/base.py) scalars (and joint slices) used across precompute, training, and EKF.
+
+```mermaid
+classDiagram
+    direction TB
+    class InstantFeatureSpec {
+        <<dataclass>>
+        +fields tuple[str, ...]
+        +stance_height_instant_index int|None
+        +use_higher_grf_mean_for_stance bool
+        +instant_dim int
+        +ordering_component_index() int
+    }
+    class ContactDetectorStepInput {
+        <<dataclass>>
+        +grf_n float
+        +p_foot_body ndarray
+        +v_foot_body ndarray
+        +q_leg dq_leg tau_leg ndarray
+        +gyro_body_corrected ndarray
+        +accel_body_corrected ndarray
+    }
+    class BaseKinematics {
+        <<abstract>>
+        +fk(leg_id, q)
+        +J_analytical(leg_id, q)
+    }
+    InstantFeatureSpec ..> ContactDetectorStepInput : field names align
+    InstantFeatureSpec ..> BaseKinematics : FK / Jacobians for offline vectors
+```
+
+**Offline CLI** — `precompute_contact_instants` is procedural (argparse + dataset walk); it writes bundles consumed by [`precomputed_io`](../training/nn/precomputed_io.py). Full-package UML: [docs/CLASS_DIAGRAM.md](../../docs/CLASS_DIAGRAM.md).
+
 ## Downstream dependencies
 
 | Step | Needs precompute? |
@@ -56,3 +91,4 @@ Same rules as [`leg_odom.training.nn.discovery`](../training/nn/discovery.py).
 
 - [Training README](../training/README.md) — how npz is consumed.
 - [Repository README](../../README.md) — full pipeline overview.
+- [CLASS_DIAGRAM.md](../../docs/CLASS_DIAGRAM.md) — package-wide classes and factories.
