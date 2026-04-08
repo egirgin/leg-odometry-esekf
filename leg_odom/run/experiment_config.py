@@ -27,7 +27,7 @@ import yaml
 EXPERIMENT_SCHEMA_VERSION = 1
 
 ALLOWED_KINEMATICS = frozenset({"anymal", "go2"})
-ALLOWED_DATASET_KINDS = frozenset({"tartanground_split"})
+ALLOWED_DATASET_KINDS = frozenset({"tartanground_split", "ocelot"})
 ALLOWED_CONTACT_DETECTORS = frozenset(
     {"none", "stub", "gmm", "neural", "dual_hmm", "ocelot", "grf_threshold"}
 )
@@ -369,18 +369,27 @@ def _validate_noise_config_file(cfg: Mapping[str, Any], workspace_root: Path) ->
 
 
 def _validate_dataset_paths(cfg: Mapping[str, Any]) -> None:
-    from leg_odom.io.split_imu_bag import discover_bag_csv_path
-
     seq = Path(str(cfg["dataset"]["sequence_dir"])).expanduser().resolve()
+    kind = str(cfg["dataset"]["kind"]).lower()
     if not seq.is_dir():
         raise ValueError(f"dataset: sequence_dir is not a directory: {seq}")
-    imu = seq / "imu.csv"
-    if not imu.is_file():
-        raise ValueError(f"dataset: missing imu.csv under {seq}")
-    try:
-        discover_bag_csv_path(seq)
-    except FileNotFoundError as e:
-        raise ValueError(f"dataset: {e}") from e
+    if kind == "tartanground_split":
+        from leg_odom.io.split_imu_bag import discover_bag_csv_path
+
+        imu = seq / "imu.csv"
+        if not imu.is_file():
+            raise ValueError(f"dataset: missing imu.csv under {seq}")
+        try:
+            discover_bag_csv_path(seq)
+        except FileNotFoundError as e:
+            raise ValueError(f"dataset: {e}") from e
+        return
+    if kind == "ocelot":
+        lowstate = seq / "lowstate.csv"
+        if not lowstate.is_file():
+            raise ValueError(f"dataset: missing lowstate.csv under {seq}")
+        return
+    raise ValueError(f"dataset: unsupported kind for strict path validation: {kind!r}")
 
 
 # --- Path resolution for experiment_resolved.yaml -----------------------------------------------

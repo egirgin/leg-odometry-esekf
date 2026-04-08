@@ -1,0 +1,37 @@
+# Ocelot lowstate experiment (dataset.kind: ocelot)
+# Run with:
+#   conda run -n leg-odometry python main.py --config config/ocelot_experiment.yaml
+
+schema_version: 1
+
+run:
+  name: ocelot_dev
+  debug:
+    enabled: false
+    generate_analysis_plots: true
+    live_visualizer:
+      enabled: false
+      sliding_window_s: 10.0
+      buffer_length: 5000
+      video_path: null
+      hz: 10
+
+robot:
+  kinematics: anymal
+
+dataset:
+  kind: ocelot
+  sequence_dir: /home/girgine/Documents/leg-odometry/iros/data/14_43_46
+
+contact:
+  detector: grf_threshold
+  grf_threshold:
+    force_threshold: 5.0
+
+ekf:
+  noise_config: config/ekf_noise/default.yaml
+  initialize_nominal_from_data: false
+
+output:
+  base_dir: output_ocelot
+  include_timestamp: true

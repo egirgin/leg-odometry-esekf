@@ -7,6 +7,6 @@ __pycache__/
 .vscode/
 
 legacy/
-output*
+output*/
 tests/
 /*.md
