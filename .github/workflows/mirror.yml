@@ -1,0 +1,34 @@
+name: Mirror to Organization
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  mirror:
+    if: github.repository == 'egirgin/leg-odometry-esekf'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Generate Ephemeral Token
+        id: generate-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.ORG_APP_ID }}
+          private-key: ${{ secrets.ORG_APP_PRIVATE_KEY }}
+          owner: srge-erau
+          repositories: leg-odometry-framework
+
+      - name: Push to Target
+        env:
+          TARGET_REPO: github.com/srge-erau/leg-odometry-framework.git
+          APP_TOKEN: ${{ steps.generate-token.outputs.token }}
+        run: |
+          git remote add mirror "https://x-access-token:${APP_TOKEN}@${TARGET_REPO}"
+          git push mirror main --force
