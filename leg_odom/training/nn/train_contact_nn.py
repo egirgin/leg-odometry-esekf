@@ -244,11 +244,10 @@ def main() -> None:
     dataset_kind = str(cfg["dataset"]["kind"]).strip()
     precomputed_root = Path(cfg["dataset"]["precomputed_root"]).expanduser().resolve()
     dl = cfg["data_loading"]
-    discovery_verbose = bool(dl["discovery_verbose"])
-    verbose_load = bool(dl["verbose_load"])
+    prep_verbose = bool(dl["verbose"])
     arch = str(cfg["architecture"])
 
-    all_npz = discover_precomputed_instants_npz(precomputed_root, verbose=discovery_verbose)
+    all_npz = discover_precomputed_instants_npz(precomputed_root, verbose=prep_verbose)
     tr = cfg["training"]
     train_paths, val_paths, test_paths = _split_sequence_paths(
         all_npz,
@@ -283,7 +282,7 @@ def main() -> None:
         robot_kin_name,
         n_legs,
         fields,
-        show_progress=not verbose_load,
+        show_progress=prep_verbose,
     )
 
     label_method = str(labels_cfg["method"]).strip().lower()
@@ -307,7 +306,7 @@ def main() -> None:
             kin,
             expected_robot_kinematics=robot_kin_name,
             validate_frames=bool(dl["validate_frames"]),
-            show_progress=not verbose_load,
+            show_progress=prep_verbose,
         )
     elif label_method == "gmm_hmm":
         print("[train_contact_nn] building per-sequence offline GMM+HMM pseudo-labels (history_length=1)…")
@@ -318,7 +317,7 @@ def main() -> None:
             kin,
             expected_robot_kinematics=robot_kin_name,
             validate_frames=bool(dl["validate_frames"]),
-            show_progress=not verbose_load,
+            show_progress=prep_verbose,
         )
 
     scaler = StandardScaler()

@@ -4,13 +4,13 @@ dataset:
   kind: tartanground
   # Alternative: ocelot (lowstate.csv tree).
   # Tree of precomputed_instants.npz (output of precompute_contact_instants --output-root); sequences discovered via rglob.
-  precomputed_root: /home/girgine/Documents/leg-odometry/iros/async_ekf_workspace/leg_odom/features/precomputed
+  precomputed_root: /home/girgine/Documents/leg-odometry/iros/async_ekf_workspace/leg_odom/features/precomputed_tartan
 
-architecture: gru
+architecture: cnn
 
 # When output.dir is null or omitted, training uses leg_odom/training/nn/pretrained_{architecture}.
 output:
-  dir: null
+  dir: leg_odom/training/nn/pretrained_cnn_tartan
 
 robot:
   kinematics: anymal
@@ -76,14 +76,13 @@ labels:
 
 data_loading:
   validate_frames: true
-  # verbose_load: tqdm off for npz load when true; false shows tqdm progress bar.
-  verbose_load: false
-  discovery_verbose: true
+  # Prep only: npz discovery log line + tqdm for npz load and label precompute (epochs unchanged).
+  verbose: true
 
 visualization:
   enabled: true
   num_sections: 4
   dpi: 150
-  filename: contact_nn_test_sections.png
+  filename: contact_nn_cnn_tartan_sections.png
 
 

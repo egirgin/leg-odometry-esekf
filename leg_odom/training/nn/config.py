@@ -150,5 +150,13 @@ def _validate_nn_train_config(cfg: Mapping[str, Any]) -> None:
 
     _require_section(cfg, "output")
     _require_section(cfg, "robot")
-    _require_section(cfg, "data_loading")
+    dl = _require_section(cfg, "data_loading")
+    if "verbose" not in dl:
+        raise ValueError("data_loading.verbose is required (bool: discovery log + tqdm for load/precompute)")
+    if not isinstance(dl["verbose"], bool):
+        raise TypeError("data_loading.verbose must be a boolean")
+    if "validate_frames" not in dl:
+        raise ValueError("data_loading.validate_frames is required")
+    if not isinstance(dl["validate_frames"], bool):
+        raise TypeError("data_loading.validate_frames must be a boolean")
     _require_section(cfg, "visualization")

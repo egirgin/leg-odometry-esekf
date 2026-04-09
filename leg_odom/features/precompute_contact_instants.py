@@ -9,6 +9,13 @@ Run once after preparing source sequence trees::
       --dataset-kind tartanground \\
       --robot anymal
 
+
+    python -m leg_odom.features.precompute_contact_instants \
+    --dataset-root /home/girgine/Documents/leg-odometry/tartanground/processed \
+    --output-root ./leg_odom/features/precomputed_tartan \
+    --dataset-kind tartanground \
+    --robot anymal
+
 NN training discovers ``precomputed_instants.npz`` only under ``dataset.precomputed_root`` (no CSV tree at train time);
 see :mod:`leg_odom.training.nn.precomputed_io`.
 """

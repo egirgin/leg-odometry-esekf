@@ -1,2 +1,0 @@
-eval_split,confusion_true_swing_pred_swing,confusion_true_swing_pred_stance,confusion_true_stance_pred_swing,confusion_true_stance_pred_stance,overall_accuracy,precision_swing,precision_stance,recall_swing,recall_stance,f1_swing,f1_stance,support_swing,support_stance
-test,49844,72,137,53267,0.997977158343012,0.9972589584041935,0.9986501434222614,0.9985575767289046,0.9974346490899558,0.9979078450804328,0.9980420261750185,49916,53404
