@@ -117,9 +117,16 @@ def _parse_args() -> argparse.Namespace:
 
 
 def _eval_loader_predictions(
-    model: nn.Module, loader: DataLoader, device: torch.device
+    model: nn.Module,
+    loader: DataLoader,
+    device: torch.device,
+    *,
+    desc: str,
 ) -> tuple[float, npt.NDArray[np.bool_], npt.NDArray[np.bool_]]:
-    """Average BCE loss and boolean labels (swing=False, stance=True) vs predictions at 0.5 threshold."""
+    """Average BCE loss and boolean labels (swing=False, stance=True) vs predictions at 0.5 threshold.
+
+    Iteration uses ``tqdm`` (``leave=False``) for progress during eval.
+    """
     model.eval()
     criterion = nn.BCEWithLogitsLoss()
     total_loss = 0.0
@@ -127,7 +134,7 @@ def _eval_loader_predictions(
     all_y: list[float] = []
     all_p: list[float] = []
     with torch.no_grad():
-        for batch_x, batch_y in loader:
+        for batch_x, batch_y in tqdm(loader, desc=desc, leave=False, unit="batch"):
             batch_x = batch_x.to(device)
             batch_y = batch_y.to(device).unsqueeze(1)
             logits = model(batch_x)
@@ -144,8 +151,10 @@ def _eval_loader_predictions(
     return avg_loss, y_true, y_pred
 
 
-def _eval_loader_metrics(model: nn.Module, loader: DataLoader, device: torch.device) -> tuple[float, dict[str, float]]:
-    avg_loss, y_true, y_pred = _eval_loader_predictions(model, loader, device)
+def _eval_loader_metrics(
+    model: nn.Module, loader: DataLoader, device: torch.device, *, desc: str
+) -> tuple[float, dict[str, float]]:
+    avg_loss, y_true, y_pred = _eval_loader_predictions(model, loader, device, desc=desc)
     metrics = {
         "accuracy": float(accuracy_score(y_true, y_pred)),
         "precision": float(precision_score(y_true, y_pred, zero_division=0)),
@@ -443,12 +452,16 @@ def main() -> None:
             loss.backward()
             optimizer.step()
 
-        train_loss, train_m = _eval_loader_metrics(model, train_loader, device)
+        train_loss, train_m = _eval_loader_metrics(
+            model, train_loader, device, desc=f"Eval train {epoch + 1}/{epochs}"
+        )
         train_loss_hist.append(train_loss)
         train_acc_hist.append(train_m["accuracy"])
 
         if use_val:
-            val_loss, val_m = _eval_loader_metrics(model, val_loader, device)
+            val_loss, val_m = _eval_loader_metrics(
+                model, val_loader, device, desc=f"Eval val {epoch + 1}/{epochs}"
+            )
             val_loss_hist.append(val_loss)
             val_acc_hist.append(val_m["accuracy"])
             metric = val_loss
@@ -526,7 +539,7 @@ def main() -> None:
         except TypeError:
             ckpt = torch.load(pt_path, map_location=device)
         model.load_state_dict(ckpt["state_dict"])
-        _, y_true_t, y_pred_t = _eval_loader_predictions(model, test_loader, device)
+        _, y_true_t, y_pred_t = _eval_loader_predictions(model, test_loader, device, desc="Eval test")
         test_metrics = {
             "accuracy": float(accuracy_score(y_true_t, y_pred_t)),
             "precision": float(precision_score(y_true_t, y_pred_t, zero_division=0)),
@@ -577,7 +590,7 @@ def main() -> None:
         model.load_state_dict(ckpt["state_dict"])
         split_name = "val" if use_val and val_loader is not None else "train"
         loader = val_loader if split_name == "val" else train_loader
-        _, y_te, y_pr = _eval_loader_predictions(model, loader, device)
+        _, y_te, y_pr = _eval_loader_predictions(model, loader, device, desc=f"Eval {split_name}")
         cls_details = _binary_eval_details(y_te, y_pr)
         _save_eval_metrics_csv(eval_csv_path, split_name, cls_details)
         meta["eval_classification_details"] = cls_details
