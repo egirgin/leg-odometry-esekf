@@ -1,5 +1,5 @@
 """
-Discover sequence directories for training preprocess.
+Discover sequence directories for NN precompute (processed CSV trees).
 
 Supported layouts:
 - Tartanground: ``imu.csv`` + exactly one ``*_bag.csv`` per trajectory directory.
@@ -69,7 +69,7 @@ def _discover_under_marker(
         if ok:
             valid.append(parent)
         elif verbose and reason:
-            print(f"[leg_odom.training.nn.discovery] skip {parent}: {reason}")
+            print(f"[leg_odom.features.discovery] skip {parent}: {reason}")
 
     if not valid:
         raise FileNotFoundError(empty_message.format(root=root_p))

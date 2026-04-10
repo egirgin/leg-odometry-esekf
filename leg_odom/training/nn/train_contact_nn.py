@@ -1,19 +1,20 @@
 """
 Train CNN or GRU contact classifiers. Hyperparameters come from YAML (see ``default_train_config.yaml``).
 
-Requires precomputed ``precomputed_instants.npz`` under ``dataset.precomputed_root`` (see
-``python -m leg_odom.features.precompute_contact_instants --dataset-kind <...>``).
+Requires precomputed ``precomputed_instants.npz`` under ``dataset.precomputed_root`` (stance timelines
+are stored in the bundle; run ``python -m leg_odom.features.precompute_contact_instants --config <yaml>``).
 
 Example::
 
     python -m leg_odom.training.nn.train_contact_nn --config leg_odom/training/nn/default_train_config.yaml
 
 Sequences are discovered as ``precomputed_instants.npz`` files under ``dataset.precomputed_root`` only.
-For ``labels.method`` ``grf_threshold`` and ``gmm_hmm``, stance timelines are built by **contact detector replay**
-on each bundle's ``sequence_dir_stored`` (same classes as EKF), not from raw ``foot_forces`` alone.
 
 When ``output.dir`` is null or omitted in YAML, weights are written under
 ``leg_odom/training/nn/pretrained_{cnn,gru}/`` (see :func:`~leg_odom.training.nn.config.load_nn_train_config`).
+
+If ``visualization.enabled`` and a test split exists, each time the best checkpoint improves the run
+writes ``output.dir/plots/samples/<stem>_epoch_<k>.png`` (random ``[train]`` and ``[test]`` windows).
 """
 
 from __future__ import annotations
@@ -50,7 +51,6 @@ from leg_odom.features.instant_spec import (
     INSTANT_FEATURE_SPEC_VERSION,
     parse_instant_feature_fields,
 )
-from leg_odom.kinematics.base import BaseKinematics
 from leg_odom.run.kinematics_factory import build_kinematics_by_name
 from leg_odom.training.nn.config import default_train_config_path, load_nn_train_config
 from leg_odom.training.nn.data import (
@@ -58,13 +58,9 @@ from leg_odom.training.nn.data import (
     collect_train_instant_matrix,
     load_precomputed_subset_by_npz_paths,
 )
-from leg_odom.training.nn.label_timelines import (
-    precompute_gmm_hmm_stance_by_seq,
-    precompute_grf_threshold_stance_by_seq,
-)
 from leg_odom.training.nn.models import ContactCNN, ContactGRU
-from leg_odom.training.nn.precomputed_io import discover_precomputed_instants_npz
-from leg_odom.training.nn.visualize_sections import plot_random_test_sections
+from leg_odom.training.nn.precomputed_io import discover_precomputed_instants_npz, load_precomputed_sequence_npz
+from leg_odom.training.nn.visualize_sections import plot_random_train_test_sections
 
 
 def _pick_device() -> torch.device:
@@ -105,7 +101,7 @@ def _split_sequence_paths(
 
 def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="Train CNN/GRU contact models (YAML config; dataset.kind selects I/O and labels)"
+        description="Train CNN/GRU contact models (YAML config; dataset.kind + precomputed npz bundles)"
     )
     p.add_argument(
         "--config",
@@ -283,51 +279,23 @@ def main() -> None:
     kin = build_kinematics_by_name(str(cfg["robot"]["kinematics"]))
     n_legs = int(kin.n_legs)
     window = int(cfg["model"]["window_size"])
-    labels_cfg = cfg["labels"]
     robot_kin_name = str(cfg["robot"]["kinematics"])
 
-    instants_by_seq_leg, foot_forces_by_seq, sequence_uid_by_seq = load_precomputed_subset_by_npz_paths(
-        (train_paths, val_paths, test_paths),
-        robot_kin_name,
-        n_legs,
-        fields,
-        show_progress=prep_verbose,
+    instants_by_seq_leg, foot_forces_by_seq, sequence_uid_by_seq, stance_by_seq_leg = (
+        load_precomputed_subset_by_npz_paths(
+            (train_paths, val_paths, test_paths),
+            robot_kin_name,
+            n_legs,
+            fields,
+            show_progress=prep_verbose,
+        )
     )
 
-    label_method = str(labels_cfg["method"]).strip().lower()
-    stance_by_seq_leg = None
-    dedup_npz: list[Path] = []
-    seen_npz: set[Path] = set()
-    for group in (train_paths, val_paths, test_paths):
-        for p in group:
-            k = Path(p).expanduser().resolve()
-            if k in seen_npz:
-                continue
-            seen_npz.add(k)
-            dedup_npz.append(k)
-
-    if label_method == "grf_threshold":
-        print("[train_contact_nn] building per-sequence GrfThresholdContactDetector labels (replay)…")
-        stance_by_seq_leg = precompute_grf_threshold_stance_by_seq(
-            dedup_npz,
-            foot_forces_by_seq,
-            labels_cfg,
-            kin,
-            expected_robot_kinematics=robot_kin_name,
-            validate_frames=bool(dl["validate_frames"]),
-            show_progress=prep_verbose,
-        )
-    elif label_method == "gmm_hmm":
-        print("[train_contact_nn] building per-sequence offline GMM+HMM pseudo-labels (history_length=1)…")
-        stance_by_seq_leg = precompute_gmm_hmm_stance_by_seq(
-            dedup_npz,
-            foot_forces_by_seq,
-            labels_cfg,
-            kin,
-            expected_robot_kinematics=robot_kin_name,
-            validate_frames=bool(dl["validate_frames"]),
-            show_progress=prep_verbose,
-        )
+    ref_bundle = load_precomputed_sequence_npz(
+        train_paths[0],
+        expected_robot_kinematics=robot_kin_name,
+        n_legs=n_legs,
+    )
 
     scaler = StandardScaler()
     train_mat = collect_train_instant_matrix(train_paths, n_legs, instants_by_seq_leg)
@@ -339,8 +307,6 @@ def main() -> None:
         n_legs,
         scaler,
         window,
-        dataset_kind,
-        labels_cfg,
         for_cnn=for_cnn,
         foot_forces_by_seq=foot_forces_by_seq,
         instants_by_seq_leg=instants_by_seq_leg,
@@ -354,8 +320,6 @@ def main() -> None:
             n_legs,
             scaler,
             window,
-            dataset_kind,
-            labels_cfg,
             for_cnn=for_cnn,
             foot_forces_by_seq=foot_forces_by_seq,
             instants_by_seq_leg=instants_by_seq_leg,
@@ -399,13 +363,16 @@ def main() -> None:
     meta_path = out_dir / f"{stem}_meta.json"
     scaler_path = out_dir / f"{stem}_scaler.npz"
     plots_dir = out_dir / "plots"
+    samples_dir = plots_dir / "samples"
     curves_path = plots_dir / f"{stem}_training_curves.png"
     eval_csv_path = out_dir / f"{stem}_eval_metrics.csv"
 
     meta: dict[str, Any] = {
         "config_path": str(cfg_path),
         "dataset_kind": dataset_kind,
-        "labels": dict(labels_cfg),
+        "contact_label_method": ref_bundle.contact_label_method,
+        "contact_labels_config": dict(ref_bundle.contact_labels_config),
+        "reference_train_npz": str(Path(train_paths[0]).resolve()),
         "architecture": arch,
         "instant_feature_spec_version": int(INSTANT_FEATURE_SPEC_VERSION),
         "feature_fields": list(spec.fields),
@@ -503,6 +470,34 @@ def main() -> None:
                 json.dump(meta, f, indent=2)
             np.savez(scaler_path, mean=scaler.mean_, scale=scaler.scale_)
 
+            viz = cfg["visualization"]
+            if test_paths and bool(viz["enabled"]):
+                sample_plot_path = samples_dir / f"{stem}_epoch_{epoch + 1}.png"
+                plot_random_train_test_sections(
+                    train_paths=train_paths,
+                    test_paths=test_paths,
+                    model=model,
+                    device=device,
+                    scaler=scaler,
+                    window_size=window,
+                    n_legs=n_legs,
+                    for_cnn=for_cnn,
+                    num_train_sections=int(viz["num_train_sections"]),
+                    num_test_sections=int(viz["num_test_sections"]),
+                    dpi=int(viz["dpi"]),
+                    save_path=sample_plot_path,
+                    rng_seed=int(tr["seed"]) + 100_003,
+                    foot_forces_by_seq=foot_forces_by_seq,
+                    instants_by_seq_leg=instants_by_seq_leg,
+                    sequence_uid_by_seq=sequence_uid_by_seq,
+                    stance_by_seq_leg=stance_by_seq_leg,
+                )
+                meta["test_sample_plots_dir"] = str(samples_dir.resolve())
+                meta["test_sample_plot_latest"] = str(sample_plot_path.resolve())
+                with open(meta_path, "w", encoding="utf-8") as f:
+                    json.dump(meta, f, indent=2)
+                print(f"[train_contact_nn] wrote sample plot {sample_plot_path}")
+
     meta["training_history"] = {
         "train_loss": train_loss_hist,
         "train_accuracy": train_acc_hist,
@@ -525,8 +520,6 @@ def main() -> None:
             n_legs,
             scaler,
             window,
-            dataset_kind,
-            labels_cfg,
             for_cnn=for_cnn,
             foot_forces_by_seq=foot_forces_by_seq,
             instants_by_seq_leg=instants_by_seq_leg,
@@ -555,33 +548,6 @@ def main() -> None:
         with open(meta_path, "w", encoding="utf-8") as f:
             json.dump(meta, f, indent=2)
         print(f"[train_contact_nn] wrote {eval_csv_path}")
-
-        viz = cfg["visualization"]
-        if bool(viz.get("enabled", True)):
-            plot_path = plots_dir / str(viz["filename"])
-            plot_random_test_sections(
-                test_paths=test_paths,
-                model=model,
-                device=device,
-                dataset_kind=dataset_kind,
-                labels_cfg=labels_cfg,
-                scaler=scaler,
-                window_size=window,
-                n_legs=n_legs,
-                for_cnn=for_cnn,
-                num_sections=int(viz["num_sections"]),
-                dpi=int(viz["dpi"]),
-                save_path=plot_path,
-                rng_seed=int(tr["seed"]) + 100_003,
-                foot_forces_by_seq=foot_forces_by_seq,
-                instants_by_seq_leg=instants_by_seq_leg,
-                sequence_uid_by_seq=sequence_uid_by_seq,
-                stance_by_seq_leg=stance_by_seq_leg,
-            )
-            meta["test_visualization"] = str(plot_path.resolve())
-            with open(meta_path, "w", encoding="utf-8") as f:
-                json.dump(meta, f, indent=2)
-            print(f"[train_contact_nn] wrote test section plot {plot_path}")
     elif pt_path.is_file():
         try:
             ckpt = torch.load(pt_path, map_location=device, weights_only=False)

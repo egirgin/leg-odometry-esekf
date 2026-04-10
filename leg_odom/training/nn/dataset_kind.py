@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from leg_odom.training.nn.discovery import is_valid_tartanground_sequence_dir
+from leg_odom.features.discovery import is_valid_tartanground_sequence_dir
 
 
 def infer_dataset_kind_from_sequence_dir(sequence_dir: str | Path) -> str:

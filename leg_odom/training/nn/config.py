@@ -61,51 +61,6 @@ def _require_section(cfg: Mapping[str, Any], key: str) -> dict[str, Any]:
     return dict(v)
 
 
-def _validate_labels_section(lb: Mapping[str, Any]) -> None:
-    """Canonical ``labels.method`` only; GMM pseudo-labels are offline per-sequence, ``history_length: 1``."""
-    method = str(lb.get("method", "")).strip().lower()
-    if method == "grf_threshold":
-        g = lb.get("grf_threshold")
-        if not isinstance(g, Mapping):
-            raise ValueError(
-                "labels.grf_threshold must be a mapping when labels.method is grf_threshold "
-                "(same keys as contact.grf_threshold; at least force_threshold)"
-            )
-        if "force_threshold" not in g:
-            raise ValueError("labels.grf_threshold.force_threshold is required when labels.method is grf_threshold")
-        float(g["force_threshold"])
-        return
-    if method == "gmm_hmm":
-        g = lb.get("gmm_hmm")
-        if not isinstance(g, Mapping):
-            raise ValueError("labels.gmm_hmm must be a mapping when labels.method is gmm_hmm")
-        gm = dict(g)
-        if gm.get("pretrained_path"):
-            raise ValueError(
-                "labels.gmm_hmm.pretrained_path is not allowed for NN training (offline per-sequence fit only)"
-            )
-        mode = str(gm.get("mode", "offline")).lower()
-        if mode != "offline":
-            raise ValueError(f"labels.gmm_hmm.mode must be offline for NN labels, got {mode!r}")
-        hl = int(gm.get("history_length", 1))
-        if hl != 1:
-            raise ValueError(
-                f"labels.gmm_hmm.history_length must be 1 (instant GMM emissions; NN window_size is separate), got {hl}"
-            )
-        return
-    if method == "dual_hmm":
-        raise NotImplementedError(
-            "labels.method dual_hmm is not implemented yet; port leg_odom.contact.dual_hmm_fusion first."
-        )
-    if method == "ocelot":
-        raise NotImplementedError(
-            "labels.method ocelot is not implemented yet; port leg_odom.contact.ocelot first."
-        )
-    raise ValueError(
-        f"Unknown labels.method {method!r}; use grf_threshold, gmm_hmm, dual_hmm, or ocelot"
-    )
-
-
 def _validate_nn_train_config(cfg: Mapping[str, Any]) -> None:
     ds = _require_section(cfg, "dataset")
     if "kind" not in ds or not str(ds["kind"]).strip():
@@ -113,7 +68,7 @@ def _validate_nn_train_config(cfg: Mapping[str, Any]) -> None:
     if "precomputed_root" not in ds or not str(ds["precomputed_root"]).strip():
         raise ValueError(
             "dataset.precomputed_root is required (tree of precomputed_instants.npz from "
-            "python -m leg_odom.features.precompute_contact_instants --dataset-kind ...)"
+            "python -m leg_odom.features.precompute_contact_instants --config <precompute.yaml>)"
         )
 
     arch = cfg.get("architecture")
@@ -138,11 +93,6 @@ def _validate_nn_train_config(cfg: Mapping[str, Any]) -> None:
     if "window_size" not in md:
         raise ValueError("model.window_size is required")
 
-    lb = _require_section(cfg, "labels")
-    if "method" not in lb:
-        raise ValueError("labels.method is required")
-    _validate_labels_section(lb)
-
     feat = _require_section(cfg, "features")
     fields = feat.get("fields")
     if not isinstance(fields, list) or not fields:
@@ -155,8 +105,12 @@ def _validate_nn_train_config(cfg: Mapping[str, Any]) -> None:
         raise ValueError("data_loading.verbose is required (bool: discovery log + tqdm for load/precompute)")
     if not isinstance(dl["verbose"], bool):
         raise TypeError("data_loading.verbose must be a boolean")
-    if "validate_frames" not in dl:
-        raise ValueError("data_loading.validate_frames is required")
-    if not isinstance(dl["validate_frames"], bool):
-        raise TypeError("data_loading.validate_frames must be a boolean")
-    _require_section(cfg, "visualization")
+    viz = _require_section(cfg, "visualization")
+    if "enabled" not in viz or not isinstance(viz["enabled"], bool):
+        raise ValueError("visualization.enabled is required (bool)")
+    for k in ("num_train_sections", "num_test_sections", "dpi"):
+        if k not in viz:
+            raise ValueError(f"visualization.{k} is required")
+        v = viz[k]
+        if not isinstance(v, int) or int(v) < 1:
+            raise ValueError(f"visualization.{k} must be a positive integer")

@@ -1,20 +1,13 @@
 """
-Precompute per-sequence ``precomputed_instants.npz`` for NN contact training (full kinematic instants + raw GRF).
+Precompute per-sequence ``precomputed_instants.npz`` for NN contact training:
+full kinematic instants, raw GRF, and per-leg stance (contact detector replay).
 
 Run once after preparing source sequence trees::
 
     python -m leg_odom.features.precompute_contact_instants \\
-      --dataset-root /path/to/processed \\
-      --output-root /path/to/precomputed_nn \\
-      --dataset-kind tartanground \\
-      --robot anymal
+      --config leg_odom/features/default_precompute_config.yaml
 
-
-    python -m leg_odom.features.precompute_contact_instants \
-    --dataset-root /home/girgine/Documents/leg-odometry/tartanground/processed \
-    --output-root ./leg_odom/features/precomputed_tartan \
-    --dataset-kind tartanground \
-    --robot anymal
+Edit the YAML for ``dataset_root``, ``output_root``, ``dataset_kind``, ``robot``, and ``labels``.
 
 NN training discovers ``precomputed_instants.npz`` only under ``dataset.precomputed_root`` (no CSV tree at train time);
 see :mod:`leg_odom.training.nn.precomputed_io`.
@@ -28,12 +21,11 @@ import json
 import os
 from pathlib import Path
 
-from leg_odom.training.nn.precomputed_io import PRECOMPUTED_INSTANTS_FILENAME, precomputed_npz_relpath
-
 import numpy as np
 import numpy.typing as npt
 from tqdm import tqdm
 
+from leg_odom.features.contact_label_timelines import stance_by_leg_from_labels_cfg
 from leg_odom.features.instant_spec import (
     FULL_OFFLINE_INSTANT_FIELDS,
     INSTANT_FEATURE_SPEC_VERSION,
@@ -41,10 +33,12 @@ from leg_odom.features.instant_spec import (
     build_timeline_features_for_leg,
     parse_instant_feature_fields,
 )
+from leg_odom.features.nn_sequence_io import discover_sequence_dirs, load_training_frames
+from leg_odom.features.precompute_config import load_precompute_config
 from leg_odom.io.columns import FOOT_FORCE_COLS
 from leg_odom.kinematics.base import BaseKinematics
 from leg_odom.run.kinematics_factory import build_kinematics_by_name
-from leg_odom.training.nn.io_labels import discover_sequence_dirs, load_training_frames
+from leg_odom.training.nn.precomputed_io import PRECOMPUTED_INSTANTS_FILENAME, precomputed_npz_relpath
 
 MANIFEST_NAME = "precompute_manifest.json"
 
@@ -108,7 +102,7 @@ def write_sequence_npz(
     full_spec,
     overwrite: bool,
     dataset_kind: str,
-    validate_frames: bool = True,
+    labels_cfg: dict,
 ) -> Path:
     out_rel = precomputed_npz_relpath(dataset_root, sequence_dir)
     out_dir = Path(output_root).expanduser().resolve() / out_rel
@@ -121,12 +115,21 @@ def write_sequence_npz(
         dataset_kind,
         sequence_dir,
         verbose=False,
-        validate=validate_frames,
+        validate=True,
     )
     t_rows = len(frames)
     n_legs = kin.n_legs
     uid = sequence_uid_for_dir(sequence_dir)
     foot = foot_forces_from_frames(frames, n_legs)
+
+    stance_by_leg = stance_by_leg_from_labels_cfg(
+        sequence_dir=sequence_dir,
+        dataset_kind=dataset_kind,
+        labels_cfg=labels_cfg,
+        kin=kin,
+        validate_frames=True,
+        t_expect=t_rows,
+    )
 
     save_kw: dict[str, npt.NDArray[np.float64] | np.ndarray] = {
         "foot_forces": foot,
@@ -137,6 +140,11 @@ def write_sequence_npz(
     for leg in range(n_legs):
         inst = build_timeline_features_for_leg(frames, kin, leg, full_spec)
         save_kw[f"instants_leg{leg}"] = inst.astype(np.float64, copy=False)
+        save_kw[f"stance_leg{leg}"] = stance_by_leg[leg].astype(np.float64, copy=False)
+
+    method = str(labels_cfg.get("method", "")).strip()
+    save_kw["contact_label_method"] = np.array(method, dtype=np.str_)
+    save_kw["contact_labels_config_json"] = np.array(json.dumps(labels_cfg, sort_keys=True), dtype=np.str_)
 
     field_joined = "\n".join(FULL_OFFLINE_INSTANT_FIELDS)
     seq_resolved = str(Path(sequence_dir).expanduser().resolve())
@@ -153,58 +161,39 @@ def write_sequence_npz(
 
 
 def _parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Precompute precomputed_instants.npz per sequence")
+    p = argparse.ArgumentParser(description="Precompute precomputed_instants.npz per sequence (single YAML config)")
     p.add_argument(
-        "--dataset-root",
+        "--config",
         type=str,
         required=True,
-        help="Dataset root containing sequence directories; training does not read this path directly.",
-    )
-    p.add_argument(
-        "--dataset-kind",
-        type=str,
-        default="tartanground",
-        choices=("tartanground", "ocelot"),
-        help="Sequence layout under --dataset-root.",
-    )
-    p.add_argument("--output-root", type=str, required=True, help="Root directory for mirrored precomputed .npz tree")
-    p.add_argument("--robot", type=str, required=True, help="Kinematics model: anymal or go2")
-    p.add_argument("--overwrite", action="store_true", help="Replace existing precomputed_instants.npz")
-    p.add_argument(
-        "--no-validate",
-        action="store_true",
-        help="Skip validate_prepared_split_dataframe when loading frames (not recommended)",
-    )
-    p.add_argument(
-        "--max-sequences",
-        type=int,
-        default=None,
-        metavar="N",
-        help="Test mode: process only the first N sequences after discovery order (1..240). "
-        "Default: all sequences. Prints one sample sequence_dir when set.",
+        help="YAML precompute config (dataset_root, output_root, dataset_kind, robot, labels, overwrite, ...)",
     )
     return p.parse_args()
 
 
 def main() -> None:
     args = _parse_args()
-    dataset_root = Path(args.dataset_root).expanduser().resolve()
-    output_root = Path(args.output_root).expanduser().resolve()
+    config_path = Path(args.config).expanduser().resolve()
+    cfg = load_precompute_config(config_path)
+    dataset_root = Path(str(cfg["dataset_root"])).expanduser().resolve()
+    output_root = Path(str(cfg["output_root"])).expanduser().resolve()
     output_root.mkdir(parents=True, exist_ok=True)
 
-    if args.max_sequences is not None:
-        n_chk = int(args.max_sequences)
+    max_sequences = cfg.get("max_sequences")
+    if max_sequences is not None:
+        n_chk = int(max_sequences)
         if n_chk < 1 or n_chk > 240:
-            raise SystemExit("--max-sequences must be between 1 and 240 (inclusive)")
+            raise SystemExit("max_sequences in config must be between 1 and 240 (inclusive)")
 
-    dataset_kind = str(args.dataset_kind).strip().lower()
-    sequences = discover_sequence_dirs(dataset_kind, dataset_root, verbose=True)
+    dataset_kind = str(cfg["dataset_kind"]).strip().lower()
+    verbose = bool(cfg.get("verbose", True))
+    sequences = discover_sequence_dirs(dataset_kind, dataset_root, verbose=verbose)
     n_total = len(sequences)
-    if args.max_sequences is not None:
-        n_req = int(args.max_sequences)
+    if max_sequences is not None:
+        n_req = int(max_sequences)
         if n_req > n_total:
             print(
-                f"[precompute_contact_instants] warning: --max-sequences={n_req} > discovered {n_total}; "
+                f"[precompute_contact_instants] warning: max_sequences={n_req} > discovered {n_total}; "
                 f"processing all {n_total} sequences"
             )
             n_use = n_total
@@ -212,37 +201,44 @@ def main() -> None:
             sequences = sequences[:n_req]
             n_use = n_req
         print(
-            f"[precompute_contact_instants] --max-sequences requested={n_req} processing={n_use} "
+            f"[precompute_contact_instants] max_sequences requested={n_req} processing={n_use} "
             f"(of {n_total} discovered); sample sequence_dir for EKF/testing: {sequences[0].resolve()}"
         )
-    kin = build_kinematics_by_name(args.robot)
+    robot = str(cfg["robot"]).strip().lower()
+    kin = build_kinematics_by_name(robot)
     full_spec = parse_instant_feature_fields(FULL_OFFLINE_INSTANT_FIELDS)
+    labels_cfg = dict(cfg["labels"])
 
     manifest: dict[str, object] = {
-        "dataset_root": str(dataset_root),
-        "dataset_kind": dataset_kind,
-        "output_root": str(output_root),
-        "robot": str(args.robot),
+        "config_path": str(config_path.resolve()),
+        "config": {
+            "dataset_root": str(dataset_root),
+            "output_root": str(output_root),
+            "dataset_kind": dataset_kind,
+            "robot": robot,
+            "labels": labels_cfg,
+            "overwrite": bool(cfg["overwrite"]),
+            "max_sequences": max_sequences,
+            "verbose": verbose,
+        },
         "n_sequences": len(sequences),
         "n_sequences_discovered": n_total,
-        "max_sequences_cap": args.max_sequences,
         "instant_feature_spec_version": int(INSTANT_FEATURE_SPEC_VERSION),
         "nn_precompute_format_version": int(NN_PRECOMPUTE_FORMAT_VERSION),
         "sequence_uids": {},
         "npz_paths": {},
     }
 
-    validate_frames = not bool(args.no_validate)
-    for seq_dir in tqdm(sequences, desc="Precompute sequences", unit="seq"):
+    for seq_dir in tqdm(sequences, desc="Precompute sequences", unit="seq", disable=not verbose):
         npz_path = write_sequence_npz(
             sequence_dir=seq_dir,
             dataset_root=dataset_root,
             output_root=output_root,
             kin=kin,
             full_spec=full_spec,
-            overwrite=bool(args.overwrite),
+            overwrite=bool(cfg["overwrite"]),
             dataset_kind=dataset_kind,
-            validate_frames=validate_frames,
+            labels_cfg=labels_cfg,
         )
         key = str(seq_dir.resolve())
         manifest["sequence_uids"][key] = int(sequence_uid_for_dir(seq_dir))

@@ -16,6 +16,7 @@ import pandas as pd
 
 from leg_odom.eval.analysis_plots import EkfRunAnalysis
 from leg_odom.eval.metrics import TrajectoryEvaluator
+from leg_odom.io.columns import IMU_BODY_QUAT_COLS
 from leg_odom.run.dataset_factory import build_leg_odometry_dataset
 from leg_odom.run.ekf_process import EkfProcessSummary
 
@@ -44,6 +45,17 @@ def run_post_ekf_analysis_and_eval(
         hist = pd.read_csv(summary.ekf_history_csv)
         merged = rec0.frames
         gt_df = rec0.position_ground_truth
+        if (
+            gt_df is not None
+            and not gt_df.empty
+            and merged is not None
+            and not merged.empty
+            and len(gt_df) == len(merged)
+        ):
+            gt_df = gt_df.copy()
+            for c in IMU_BODY_QUAT_COLS:
+                if c in merged.columns and c not in gt_df.columns:
+                    gt_df[c] = merged[c].to_numpy()
 
         row = TrajectoryEvaluator().evaluate(
             hist,

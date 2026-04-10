@@ -1,6 +1,5 @@
 """
-Training tensors: stance labels from precomputed per-sequence timelines (``grf_threshold`` / ``gmm_hmm`` via detector replay),
-subset kinematic instants, sliding windows.
+Training tensors: stance labels from precomputed per-sequence bundles, subset kinematic instants, sliding windows.
 
 Loads ``precomputed_instants.npz`` per sequence (see :mod:`leg_odom.training.nn.precomputed_io`).
 """
@@ -8,7 +7,7 @@ Loads ``precomputed_instants.npz`` per sequence (see :mod:`leg_odom.training.nn.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Iterable, Mapping, Sequence
 
 import numpy as np
 import numpy.typing as npt
@@ -18,13 +17,9 @@ from torch.utils.data import ConcatDataset, Dataset
 from tqdm import tqdm
 
 from leg_odom.features.instant_spec import FULL_OFFLINE_INSTANT_FIELDS, subset_instant_columns
-from leg_odom.training.nn.io_labels import compute_stance_labels
 from leg_odom.training.nn.precomputed_io import load_precomputed_sequence_npz
-from leg_odom.training.nn.sequence_frames import grf_stance_labels, load_tartanground_frames
 
 __all__ = [
-    "grf_stance_labels",
-    "load_tartanground_frames",
     "load_precomputed_subset_by_npz_paths",
     "collect_train_instant_matrix",
     "build_sliding_window_datasets",
@@ -46,10 +41,11 @@ def load_precomputed_subset_by_npz_paths(
     dict[Path, dict[int, npt.NDArray[np.float64]]],
     dict[Path, npt.NDArray[np.float64]],
     dict[Path, int],
+    dict[Path, dict[int, npt.NDArray[np.float64]]],
 ]:
     """
     For each distinct ``precomputed_instants.npz`` path (dedup order across ``path_groups``), load the bundle,
-    subset instant columns to ``subset_fields``, and retain only subsets plus ``foot_forces``.
+    subset instant columns to ``subset_fields``, and retain subsets plus ``foot_forces`` and per-leg ``stance``.
     """
     seen: set[Path] = set()
     ordered: list[Path] = []
@@ -62,6 +58,7 @@ def load_precomputed_subset_by_npz_paths(
             ordered.append(key)
 
     instants_by_seq_leg: dict[Path, dict[int, npt.NDArray[np.float64]]] = {k: {} for k in ordered}
+    stance_by_seq_leg: dict[Path, dict[int, npt.NDArray[np.float64]]] = {k: {} for k in ordered}
     foot_by_seq: dict[Path, npt.NDArray[np.float64]] = {}
     uid_by_seq: dict[Path, int] = {}
 
@@ -78,7 +75,10 @@ def load_precomputed_subset_by_npz_paths(
             instants_by_seq_leg[key][int(leg)] = subset_instant_columns(
                 full, FULL_OFFLINE_INSTANT_FIELDS, subset_fields
             )
-    return instants_by_seq_leg, foot_by_seq, uid_by_seq
+            stance_by_seq_leg[key][int(leg)] = np.asarray(
+                bundle.stance_by_leg[int(leg)], dtype=np.float64, order="C"
+            )
+    return instants_by_seq_leg, foot_by_seq, uid_by_seq, stance_by_seq_leg
 
 
 def collect_train_instant_matrix(
@@ -104,23 +104,17 @@ def build_sliding_window_datasets(
     n_legs: int,
     scaler: StandardScaler,
     window_size: int,
-    dataset_kind: str,
-    labels_cfg: Mapping[str, Any],
     *,
     for_cnn: bool,
     foot_forces_by_seq: Mapping[Path, npt.NDArray[np.float64]],
     instants_by_seq_leg: Mapping[Path, Mapping[int, npt.NDArray[np.float64]]],
     sequence_uid_by_seq: Mapping[Path, int],
-    stance_by_seq_leg: Mapping[Path, Mapping[int, npt.NDArray[np.float64]]] | None = None,
+    stance_by_seq_leg: Mapping[Path, Mapping[int, npt.NDArray[np.float64]]],
 ) -> ConcatDataset:
     """
     One concatenated ``Dataset`` over all sequences × legs after scaling instants.
 
-    Label at index ``i`` is stance at timestep ``i`` (end of window). Each part stores
-    ``sequence_uid`` for the parent sequence (see :func:`global_index_to_sequence_uid`).
-
-    If ``stance_by_seq_leg`` is set (GRF threshold or GMM+HMM replay timelines), use it as ``y``;
-    otherwise labels come from :func:`~leg_odom.training.nn.io_labels.compute_stance_labels` (extensions only).
+    Label at index ``i`` is stance at timestep ``i`` (end of window), from the precomputed bundle.
     """
     parts: list[Dataset] = []
     for sd in precomputed_instants_npz_paths:
@@ -131,18 +125,14 @@ def build_sliding_window_datasets(
             inst = instants_by_seq_leg[key][leg]
             if inst.shape[0] == 0:
                 continue
-            if stance_by_seq_leg is not None:
-                y = np.asarray(stance_by_seq_leg[key][int(leg)], dtype=np.float64).reshape(-1)
-            else:
-                y = compute_stance_labels(
-                    dataset_kind,
-                    int(leg),
-                    labels_cfg,
-                    foot_forces=foot,
-                )
+            y = np.asarray(stance_by_seq_leg[key][int(leg)], dtype=np.float64).reshape(-1)
             if y.shape[0] != inst.shape[0]:
                 raise RuntimeError(
                     f"Label length {y.shape[0]} != features {inst.shape[0]} for {key} leg {leg}"
+                )
+            if y.shape[0] != foot.shape[0]:
+                raise RuntimeError(
+                    f"Stance length {y.shape[0]} != foot_forces T={foot.shape[0]} for {key} leg {leg}"
                 )
             scaled = scaler.transform(inst.astype(np.float64, copy=False))
             if for_cnn:
@@ -198,8 +188,6 @@ class SlidingWindowDatasetCnn(Dataset):
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
         window = self.padded_features[idx : idx + self.window_size]
         label = self.labels[idx]
-        # TODO: Keep CNN windows as (C, L) because nn.Conv1d expects (B, C, L).
-        # Revisit if we later standardize all model inputs to one canonical layout.
         return window.T, label
 
 
@@ -227,6 +215,4 @@ class SlidingWindowDatasetGru(Dataset):
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
         window = self.padded_features[idx : idx + self.window_size]
         label = self.labels[idx]
-        # TODO: Keep GRU windows as (L, C) because nn.GRU(batch_first=True) expects (B, L, C).
-        # Revisit if we later standardize all model inputs to one canonical layout.
         return window, label

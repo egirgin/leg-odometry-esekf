@@ -1,5 +1,5 @@
 """
-Load merged timelines for NN precompute / training helpers, by storage layout.
+Load merged timelines for NN precompute, by storage layout.
 
 Downstream code should treat returned :class:`pandas.DataFrame` the same regardless of layout.
 """

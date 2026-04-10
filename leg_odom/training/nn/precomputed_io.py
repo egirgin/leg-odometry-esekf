@@ -4,15 +4,12 @@ Resolve and load precomputed ``precomputed_instants.npz`` bundles for NN contact
 Training discovers ``precomputed_instants.npz`` under ``dataset.precomputed_root`` only (no CSV tree at train time).
 If a bundle is missing or invalid, errors include instructions to run::
 
-    python -m leg_odom.features.precompute_contact_instants \\
-      --dataset-root <path to processed CSV tree> \\
-      --dataset-kind <tartanground|ocelot> \\
-      --output-root <same path as dataset.precomputed_root> \\
-      --robot <anymal|go2>
+    python -m leg_odom.features.precompute_contact_instants --config <precompute.yaml>
 """
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
@@ -50,11 +47,8 @@ def precomputed_npz_relpath(dataset_root: Path, sequence_dir: Path) -> Path:
 _PREPROCESS_HINT = (
     "Run precompute:\n"
     "  python -m leg_odom.features.precompute_contact_instants \\\n"
-    "    --dataset-root <path to processed CSV tree> \\\n"
-    "    --dataset-kind <tartanground|ocelot> \\\n"
-    "    --output-root <path to dataset.precomputed_root> \\\n"
-    "    --robot <anymal|go2>\n"
-    "(Add --overwrite to replace existing npz files.)"
+    "    --config leg_odom/features/default_precompute_config.yaml\n"
+    "(Edit YAML for dataset_root, output_root, labels, etc.)"
 )
 
 
@@ -115,9 +109,12 @@ class PrecomputedSequenceBundle:
     sequence_uid: np.int64
     foot_forces: npt.NDArray[np.float64]
     instants_by_leg: dict[int, npt.NDArray[np.float64]]
+    stance_by_leg: dict[int, npt.NDArray[np.float64]]
     field_names: tuple[str, ...]
     sequence_dir_stored: str
     robot_kinematics_stored: str
+    contact_label_method: str
+    contact_labels_config: dict[str, Any]
 
 
 def load_precomputed_sequence_npz(
@@ -185,15 +182,43 @@ def load_precomputed_sequence_npz(
                     f"{p}: {key} shape {arr.shape} invalid (expected D={len(FULL_OFFLINE_INSTANT_FIELDS)}); "
                     f"{_PREPROCESS_HINT}"
                 )
+            if int(arr.shape[0]) != int(foot.shape[0]):
+                raise PrecomputedNnLoadError(
+                    f"{p}: {key} T={arr.shape[0]} != foot_forces T={foot.shape[0]}; {_PREPROCESS_HINT}"
+                )
             instants_by_leg[leg] = arr
         seq_dir_stored = _str_field(z, "sequence_dir")
+        contact_method = _str_field(z, "contact_label_method")
+        cfg_raw = _str_field(z, "contact_labels_config_json")
+        try:
+            contact_labels_config = json.loads(cfg_raw)
+        except json.JSONDecodeError as e:
+            raise PrecomputedNnLoadError(f"{p}: invalid contact_labels_config_json: {e}\n{_PREPROCESS_HINT}") from e
+        if not isinstance(contact_labels_config, dict):
+            raise PrecomputedNnLoadError(f"{p}: contact_labels_config_json must decode to an object\n{_PREPROCESS_HINT}")
+
+        t_rows = int(foot.shape[0])
+        stance_by_leg: dict[int, npt.NDArray[np.float64]] = {}
+        for leg in range(int(n_legs)):
+            sk = f"stance_leg{leg}"
+            if sk not in z:
+                raise PrecomputedNnLoadError(f"{p}: missing {sk!r}; {_PREPROCESS_HINT}")
+            st = np.array(z[sk], dtype=np.float64, copy=True).reshape(-1)
+            if int(st.shape[0]) != t_rows:
+                raise PrecomputedNnLoadError(
+                    f"{p}: {sk} length {st.shape[0]} != foot_forces T={t_rows}; {_PREPROCESS_HINT}"
+                )
+            stance_by_leg[leg] = st
 
     return PrecomputedSequenceBundle(
         npz_path=p,
         sequence_uid=uid,
         foot_forces=foot,
         instants_by_leg=instants_by_leg,
+        stance_by_leg=stance_by_leg,
         field_names=field_names,
         sequence_dir_stored=seq_dir_stored,
         robot_kinematics_stored=rob,
+        contact_label_method=contact_method,
+        contact_labels_config=contact_labels_config,
     )

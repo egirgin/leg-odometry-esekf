@@ -37,7 +37,7 @@ contact:
     use_abs: false
   # GMM+HMM (single modality): package leg_odom/contact/gmm_hmm/; fit .npz via
   #   python -m leg_odom.training.gmm.train_gmm --precomputed-root <precomputed_instants tree> [--max-sequences N]
-  # (requires python -m leg_odom.features.precompute_contact_instants first; same npz as NN training)
+  # (requires precompute_contact_instants --config <yaml> first; same npz as NN training)
   gmm:
     # offline = whole-sequence GMM per leg before EKF (requires history_length: 1 only — instant emissions).
     # online = sliding refit + pretrained .npz; use history_length > 1 only with online + .npz.

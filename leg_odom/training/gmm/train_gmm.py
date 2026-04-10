@@ -4,7 +4,7 @@ Fit a 2-component GMM on sliding-window features and save a pretrained ``.npz``.
 Reads ``precomputed_instants.npz`` bundles (same as NN contact training). Run precompute first::
 
     python -m leg_odom.features.precompute_contact_instants \\
-      --dataset-root <processed_csv_tree> --output-root <precomputed_root> --robot anymal
+      --config leg_odom/features/default_precompute_config.yaml
 
 Then::
 

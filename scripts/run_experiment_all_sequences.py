@@ -38,7 +38,7 @@ from leg_odom.run.experiment_config import (
     load_experiment_yaml,
 )
 from leg_odom.run.output_layout import prepare_run_output_dir
-from leg_odom.training.nn.discovery import discover_tartanground_sequence_dirs
+from leg_odom.features.discovery import discover_tartanground_sequence_dirs
 
 
 def _touch_subpackages() -> None:

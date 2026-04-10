@@ -4,16 +4,11 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
-# EDIT: directory tree containing sequences; EDIT: output tree for npz + manifest
-DATASET_ROOT="${DATASET_ROOT:-/path/to/processed_tartanground}"
-OUTPUT_ROOT="${OUTPUT_ROOT:-./out_precomputed_tartanground}"
-ROBOT="${ROBOT:-anymal}"
+# EDIT: YAML with dataset_root, output_root, dataset_kind: tartanground, robot, labels, overwrite, ...
+PRECOMPUTE_CONFIG="${PRECOMPUTE_CONFIG:-$REPO_ROOT/leg_odom/features/default_precompute_config.yaml}"
 
 conda run -n leg-odometry python -m leg_odom.features.precompute_contact_instants \
-  --dataset-root "$DATASET_ROOT" \
-  --dataset-kind tartanground \
-  --output-root "$OUTPUT_ROOT" \
-  --robot "$ROBOT" \
+  --config "$PRECOMPUTE_CONFIG" \
   "$@"
 
-echo "Manifest: $OUTPUT_ROOT/precompute_manifest.json"
+echo "See precompute_manifest.json under output_root from your YAML"

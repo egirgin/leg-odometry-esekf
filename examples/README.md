@@ -10,8 +10,8 @@ For **GRF-threshold** contact only, skip steps 1–2.
 
 | Script | Purpose |
 | ------ | ------- |
-| [`precompute_tartanground.sh`](precompute_tartanground.sh) | Build npz tree for imu+bag layouts |
-| [`precompute_ocelot.sh`](precompute_ocelot.sh) | Build npz tree for Ocelot `lowstate.csv` |
+| [`precompute_tartanground.sh`](precompute_tartanground.sh) | Build npz tree for imu+bag layouts (`PRECOMPUTE_CONFIG` → YAML, default `leg_odom/features/default_precompute_config.yaml`) |
+| [`precompute_ocelot.sh`](precompute_ocelot.sh) | Build npz tree for Ocelot `lowstate.csv` (same; set `dataset_kind: ocelot` in YAML) |
 | [`train_nn.sh`](train_nn.sh) | CNN/GRU training from npz |
 | [`train_gmm.sh`](train_gmm.sh) | GMM fit from npz |
 | [`contact_grf_plot.sh`](contact_grf_plot.sh) | GRF-threshold replay plot (no EKF) |

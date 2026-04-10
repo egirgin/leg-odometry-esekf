@@ -1,9 +1,9 @@
 # Neural contact training — Ocelot + Go2 preset.
-# Run precompute_contact_instants first; training reads precomputed_instants.npz only.
+# Run precompute_contact_instants --config <yaml> first; training reads precomputed_instants.npz only.
 
 dataset:
   kind: ocelot
-  # Tree of precomputed_instants.npz (output of precompute_contact_instants --output-root); sequences discovered via rglob.
+  # Tree of precomputed_instants.npz (precompute output_root); sequences discovered via rglob.
   precomputed_root: /home/girgine/Documents/leg-odometry/iros/async_ekf_workspace/leg_odom/features/precomputed_ocelot
 
 architecture: gru
@@ -36,39 +36,11 @@ training:
 model:
   window_size: 150
 
-# Labels: labels.method uses the same detector-type strings as contact.detector where applicable.
-# Implemented: grf_threshold, gmm_hmm. Placeholders: dual_hmm, ocelot.
-labels:
-  method: grf_threshold
-  grf_threshold:
-    force_threshold: 20.0
-    # Optional (same as contact.grf_threshold): var_at_threshold, zupt_meas_var, use_abs, ...
-
-# --- Commented alternatives (use one active ``labels`` block; copy/replace above) ---
-#
-# gmm_hmm: offline GMM+HMM + replay per sequence; history_length must be 1; no pretrained_path for NN labels.
-# labels:
-#   method: gmm_hmm
-#   gmm_hmm:
-#     mode: offline
-#     history_length: 1
-#     trans_stay: 0.99
-#     degeneracy_max_weight: 0.98
-#     random_state: 42
-#     feature_fields:
-#       - est_tau_calf
-#       - v_foot_body_x
-#       - v_foot_body_y
-#       - v_foot_body_z
-#       - p_foot_body_z
-
 data_loading:
-  validate_frames: true
-  # Prep only: npz discovery log line + tqdm for npz load and label precompute (epochs unchanged).
   verbose: true
 
 visualization:
   enabled: true
-  num_sections: 4
+  num_train_sections: 2
+  num_test_sections: 2
   dpi: 150
-  filename: contact_nn_test_sections.png

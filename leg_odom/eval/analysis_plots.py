@@ -5,6 +5,10 @@ Column conventions match :mod:`leg_odom.eval.ekf_step_log` (``leg{i}_stance``,
 ``leg{i}_zupt_accepted``, ``leg{i}_v_w*``, euler ``*_deg``). Merged logs use
 ``foot_force_0``…``foot_force_3`` and ``t_abs``.
 
+``filtered_states`` overlays position / velocity / attitude GT on the first three panels when
+``gt_df`` supplies ``local_*`` (and body quaternions for Euler GT). Scalar trajectory metrics are
+not written as a PNG (CSV only).
+
 Primary API: :class:`EkfRunAnalysis` (mirrors legacy ``AnalysisAndEvaluation`` plot side).
 """
 
@@ -17,8 +21,9 @@ from typing import Any, Mapping
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from scipy.spatial.transform import Rotation
 
-from leg_odom.io.columns import TIME_NANOSEC_COL, TIME_SEC_COL
+from leg_odom.io.columns import IMU_BODY_QUAT_COLS, TIME_NANOSEC_COL, TIME_SEC_COL
 from leg_odom.io.ground_truth import extract_position_ground_truth
 
 
@@ -44,6 +49,19 @@ def _interp_columns(raw_t: np.ndarray, raw_y: np.ndarray, t_query: np.ndarray) -
     if not np.any(m):
         return np.full_like(t_query, np.nan, dtype=float)
     return np.interp(t_query, raw_t[m], raw_y[m], left=np.nan, right=np.nan)
+
+
+def _gt_time_array(gt_df: pd.DataFrame | None) -> np.ndarray | None:
+    if gt_df is None or gt_df.empty:
+        return None
+    if TIME_SEC_COL in gt_df.columns and TIME_NANOSEC_COL in gt_df.columns:
+        return (
+            gt_df[TIME_SEC_COL].to_numpy(dtype=np.float64)
+            + gt_df[TIME_NANOSEC_COL].to_numpy(dtype=np.float64) * 1e-9
+        )
+    if "t_abs" in gt_df.columns:
+        return gt_df["t_abs"].to_numpy(dtype=np.float64)
+    return None
 
 
 def _stance_accepted_mask(hist: pd.DataFrame, leg_i: int) -> pd.Series:
@@ -75,46 +93,177 @@ class EkfRunAnalysis:
         fig.savefig(path, dpi=200, bbox_inches="tight")
         plt.close(fig)
 
-    def plot_states(self, hist: pd.DataFrame) -> None:
+    def plot_states(self, hist: pd.DataFrame, gt_df: pd.DataFrame | None = None) -> None:
         if hist.empty:
             return
         t = _hist_time(hist)
         fig, axes = plt.subplots(4, 1, figsize=(10, 10), sharex=True)
 
+        gt_t = _gt_time_array(gt_df)
+
         # .to_numpy(): matplotlib + newer pandas no longer accept raw Series in plot()
         axes[0].plot(t, hist["p_x"].to_numpy(dtype=np.float64), label="p_x")
         axes[0].plot(t, hist["p_y"].to_numpy(dtype=np.float64), label="p_y")
         axes[0].plot(t, hist["p_z"].to_numpy(dtype=np.float64), label="p_z")
+        if (
+            gt_t is not None
+            and gt_df is not None
+            and {"local_x", "local_y", "local_z"}.issubset(gt_df.columns)
+        ):
+            gx = gt_df["local_x"].to_numpy(dtype=np.float64)
+            gy = gt_df["local_y"].to_numpy(dtype=np.float64)
+            gz = gt_df["local_z"].to_numpy(dtype=np.float64)
+            axes[0].plot(
+                t,
+                _interp_columns(gt_t, gx, t),
+                linestyle="--",
+                alpha=0.75,
+                color="C0",
+                label="p_x GT",
+            )
+            axes[0].plot(
+                t,
+                _interp_columns(gt_t, gy, t),
+                linestyle="--",
+                alpha=0.75,
+                color="C1",
+                label="p_y GT",
+            )
+            axes[0].plot(
+                t,
+                _interp_columns(gt_t, gz, t),
+                linestyle="--",
+                alpha=0.75,
+                color="C2",
+                label="p_z GT",
+            )
         axes[0].set_ylabel("Position [m]")
         axes[0].grid(True, alpha=0.4)
-        axes[0].legend(loc="upper right")
+        axes[0].legend(loc="upper right", fontsize="small")
 
         axes[1].plot(t, hist["v_x"].to_numpy(dtype=np.float64), label="v_x")
         axes[1].plot(t, hist["v_y"].to_numpy(dtype=np.float64), label="v_y")
         axes[1].plot(t, hist["v_z"].to_numpy(dtype=np.float64), label="v_z")
+        if gt_t is not None and gt_df is not None and {"local_x", "local_y", "local_z"}.issubset(
+            gt_df.columns
+        ):
+            gx = gt_df["local_x"].to_numpy(dtype=np.float64)
+            gy = gt_df["local_y"].to_numpy(dtype=np.float64)
+            gz = gt_df["local_z"].to_numpy(dtype=np.float64)
+            gvx = np.gradient(gx, gt_t)
+            gvy = np.gradient(gy, gt_t)
+            gvz = np.gradient(gz, gt_t)
+            axes[1].plot(
+                t,
+                _interp_columns(gt_t, gvx, t),
+                linestyle="--",
+                alpha=0.75,
+                color="C0",
+                label="v_x GT",
+            )
+            axes[1].plot(
+                t,
+                _interp_columns(gt_t, gvy, t),
+                linestyle="--",
+                alpha=0.75,
+                color="C1",
+                label="v_y GT",
+            )
+            axes[1].plot(
+                t,
+                _interp_columns(gt_t, gvz, t),
+                linestyle="--",
+                alpha=0.75,
+                color="C2",
+                label="v_z GT",
+            )
         axes[1].set_ylabel("Velocity [m/s]")
         axes[1].grid(True, alpha=0.4)
-        axes[1].legend(loc="upper right")
+        axes[1].legend(loc="upper right", fontsize="small")
 
         roll_c = "roll_deg" if "roll_deg" in hist.columns else "roll"
         pitch_c = "pitch_deg" if "pitch_deg" in hist.columns else "pitch"
         yaw_c = "yaw_deg" if "yaw_deg" in hist.columns else "yaw"
+        use_deg = "roll_deg" in hist.columns
+        rot_ylabel = "Rotation [deg]" if use_deg else "Rotation [rad]"
         axes[2].plot(t, hist[roll_c].to_numpy(dtype=np.float64), label="Roll")
         axes[2].plot(t, hist[pitch_c].to_numpy(dtype=np.float64), label="Pitch")
         axes[2].plot(t, hist[yaw_c].to_numpy(dtype=np.float64), label="Yaw")
-        axes[2].set_ylabel("Rotation [deg]")
+        if (
+            gt_t is not None
+            and gt_df is not None
+            and all(c in gt_df.columns for c in IMU_BODY_QUAT_COLS)
+        ):
+            qx = gt_df["ori_qx"].to_numpy(dtype=np.float64)
+            qy = gt_df["ori_qy"].to_numpy(dtype=np.float64)
+            qz = gt_df["ori_qz"].to_numpy(dtype=np.float64)
+            qw = gt_df["ori_qw"].to_numpy(dtype=np.float64)
+            quat = np.stack((qx, qy, qz, qw), axis=1)
+            euler = Rotation.from_quat(quat).as_euler("zyx")
+            for j in range(3):
+                euler[:, j] = np.unwrap(euler[:, j])
+            yaw_a, pitch_a, roll_a = euler[:, 0], euler[:, 1], euler[:, 2]
+            if use_deg:
+                yaw_a = np.rad2deg(yaw_a)
+                pitch_a = np.rad2deg(pitch_a)
+                roll_a = np.rad2deg(roll_a)
+            axes[2].plot(
+                t,
+                _interp_columns(gt_t, roll_a, t),
+                linestyle="--",
+                alpha=0.75,
+                color="C0",
+                label="Roll GT",
+            )
+            axes[2].plot(
+                t,
+                _interp_columns(gt_t, pitch_a, t),
+                linestyle="--",
+                alpha=0.75,
+                color="C1",
+                label="Pitch GT",
+            )
+            axes[2].plot(
+                t,
+                _interp_columns(gt_t, yaw_a, t),
+                linestyle="--",
+                alpha=0.75,
+                color="C2",
+                label="Yaw GT",
+            )
+        axes[2].set_ylabel(rot_ylabel)
         axes[2].grid(True, alpha=0.4)
-        axes[2].legend(loc="upper right")
+        axes[2].legend(loc="upper right", fontsize="small")
 
-        axes[3].plot(t, hist["bax"].to_numpy(dtype=np.float64), label="bax", linestyle="--")
-        axes[3].plot(t, hist["bay"].to_numpy(dtype=np.float64), label="bay", linestyle="--")
-        axes[3].plot(t, hist["baz"].to_numpy(dtype=np.float64), label="baz", linestyle="--")
-        axes[3].plot(t, hist["bgx"].to_numpy(dtype=np.float64), label="bgx")
-        axes[3].plot(t, hist["bgy"].to_numpy(dtype=np.float64), label="bgy")
-        axes[3].plot(t, hist["bgz"].to_numpy(dtype=np.float64), label="bgz")
-        axes[3].set_ylabel("IMU biases")
-        axes[3].grid(True, alpha=0.4)
-        axes[3].legend(loc="upper right")
+        ax_acc = axes[3]
+        ax_acc.plot(
+            t, hist["bax"].to_numpy(dtype=np.float64), label="bax", linestyle="--", color="C0"
+        )
+        ax_acc.plot(
+            t, hist["bay"].to_numpy(dtype=np.float64), label="bay", linestyle="--", color="C1"
+        )
+        ax_acc.plot(
+            t, hist["baz"].to_numpy(dtype=np.float64), label="baz", linestyle="--", color="C2"
+        )
+        ax_acc.set_ylabel("Accel bias [m/s²]")
+        ax_acc.grid(True, alpha=0.4)
+
+        ax_gyro = ax_acc.twinx()
+        ax_gyro.plot(t, hist["bgx"].to_numpy(dtype=np.float64), label="bgx", color="C3")
+        ax_gyro.plot(t, hist["bgy"].to_numpy(dtype=np.float64), label="bgy", color="C4")
+        ax_gyro.plot(t, hist["bgz"].to_numpy(dtype=np.float64), label="bgz", color="C5")
+        ax_gyro.set_ylabel("Gyro bias [rad/s]")
+        ax_gyro.spines["right"].set_color("#888888")
+        ax_gyro.tick_params(axis="y", colors="#555555")
+
+        bias_lines = ax_acc.get_lines() + ax_gyro.get_lines()
+        ax_acc.legend(
+            bias_lines,
+            [ln.get_label() for ln in bias_lines],
+            loc="upper right",
+            ncol=2,
+            fontsize="small",
+        )
 
         axes[-1].set_xlabel("Time [s]")
         self._save_fig(fig, "filtered_states")
@@ -255,12 +404,9 @@ class EkfRunAnalysis:
         ax_z.plot(t, pz, label="Est. z", color="C0", linewidth=1.5)
         if gt_df is not None and not gt_df.empty and "local_z" in gt_df.columns:
             try:
-                gt_t = (
-                    gt_df[TIME_SEC_COL].to_numpy(dtype=np.float64)
-                    + gt_df[TIME_NANOSEC_COL].to_numpy(dtype=np.float64) * 1e-9
-                    if TIME_SEC_COL in gt_df.columns and TIME_NANOSEC_COL in gt_df.columns
-                    else gt_df["t_abs"].to_numpy(dtype=np.float64)
-                )
+                gt_t = _gt_time_array(gt_df)
+                if gt_t is None:
+                    raise ValueError("no GT time column")
                 gz = gt_df["local_z"].to_numpy(dtype=np.float64)
                 gz_i = _interp_columns(gt_t, gz, t)
                 ax_z.plot(
@@ -282,136 +428,6 @@ class EkfRunAnalysis:
 
         self._save_fig(fig, "trajectory_xy_z")
 
-    def plot_evaluation_metrics(self, m: Mapping[str, Any]) -> None:
-        """
-        One figure, multiple subplots: scalar metrics from :class:`~leg_odom.eval.metrics.TrajectoryEvaluator`.
-
-        Skipped runs show a short message instead of bars.
-        """
-        skipped = str(m.get("skipped", "") or "")
-        fig = plt.figure(figsize=(10, 9))
-        gs = fig.add_gridspec(3, 3, height_ratios=[2.0, 1.2, 1.4], hspace=0.45, wspace=0.4)
-
-        if skipped:
-            ax = fig.add_subplot(gs[:, :])
-            ax.text(
-                0.5,
-                0.5,
-                f"Evaluation skipped\n{skipped}",
-                ha="center",
-                va="center",
-                transform=ax.transAxes,
-                fontsize=12,
-            )
-            ax.set_axis_off()
-            seq = m.get("sequence_name", "")
-            fig.suptitle(f"Trajectory metrics{f' — {seq}' if seq else ''}", fontsize=12)
-            self._save_fig(fig, "evaluation_metrics", tight_layout=False)
-            return
-
-        def _f(key: str) -> float | None:
-            v = m.get(key)
-            try:
-                x = float(v)
-            except (TypeError, ValueError):
-                return None
-            return x if np.isfinite(x) else None
-
-        # Row 0: position RMSE [m] — overall ATE + per-axis breakdown
-        ax0 = fig.add_subplot(gs[0, :])
-        pos_labels: list[str] = []
-        pos_vals: list[float] = []
-        for lab, key in (
-            ("ATE RMSE", "ate_m"),
-            ("ATE X", "ate_x_m"),
-            ("ATE Y", "ate_y_m"),
-            ("ATE Z", "ate_z_m"),
-        ):
-            fv = _f(key)
-            if fv is not None:
-                pos_labels.append(lab)
-                pos_vals.append(fv)
-        if pos_vals:
-            x = np.arange(len(pos_labels))
-            ax0.bar(x, pos_vals, color="C0", edgecolor="black", linewidth=0.4)
-            ax0.set_xticks(x)
-            ax0.set_xticklabels(pos_labels, rotation=20, ha="right")
-        ax0.set_ylabel("RMSE [m]")
-        ax0.set_title("Position error (ATE RMSE = Euclidean RMSE over time)")
-        ax0.grid(True, axis="y", alpha=0.35)
-
-        # Row 1: heading + relative pose (separate axes — different units)
-        ahe = _f("ahe_deg")
-        ax1 = fig.add_subplot(gs[1, 0])
-        if ahe is not None:
-            ax1.bar([0], [ahe], color="C1", edgecolor="black", linewidth=0.4)
-        ax1.set_xticks([0])
-        ax1.set_xticklabels(["AHE"])
-        ax1.set_ylabel("[deg]")
-        ax1.set_title("Absolute heading error")
-        ax1.grid(True, axis="y", alpha=0.35)
-
-        rpt = _f("rpe_trans_pct")
-        ax2 = fig.add_subplot(gs[1, 1])
-        if rpt is not None:
-            ax2.bar([0], [rpt], color="C2", edgecolor="black", linewidth=0.4)
-        ax2.set_xticks([0])
-        ax2.set_xticklabels(["RPE trans"])
-        ax2.set_ylabel("[%]")
-        ax2.set_title("RPE translation")
-        ax2.grid(True, axis="y", alpha=0.35)
-
-        rpr = _f("rpe_rot_deg_per_m")
-        ax3 = fig.add_subplot(gs[1, 2])
-        if rpr is not None:
-            ax3.bar([0], [rpr], color="C3", edgecolor="black", linewidth=0.4)
-        ax3.set_xticks([0])
-        ax3.set_xticklabels(["RPE rot"])
-        ax3.set_ylabel("[deg/m]")
-        ax3.set_title("RPE rotation")
-        ax3.grid(True, axis="y", alpha=0.35)
-
-        # Row 2: path distances [m] vs normalized / percent metrics
-        ax4 = fig.add_subplot(gs[2, 0:2])
-        d_labels = ["FPE", "Fréchet", "GT len", "Est len"]
-        d_keys = ["fpe_m", "frechet_m", "gt_length_m", "est_length_m"]
-        d_vals = [_f(k) for k in d_keys]
-        d_ok = [(lb, v) for lb, v in zip(d_labels, d_vals) if v is not None]
-        if d_ok:
-            lbs, vs = zip(*d_ok)
-            yp = np.arange(len(lbs))
-            ax4.barh(yp, vs, color="C4", edgecolor="black", linewidth=0.4)
-            ax4.set_yticks(yp)
-            ax4.set_yticklabels(lbs)
-        ax4.set_xlabel("[m]")
-        ax4.set_title("Path length / endpoint / shape (meters)")
-        ax4.grid(True, axis="x", alpha=0.35)
-
-        ax5 = fig.add_subplot(gs[2, 2])
-        le = _f("length_err")
-        dr = _f("drift_pct")
-        xs = []
-        ys = []
-        labs = []
-        if le is not None:
-            xs.append(0)
-            ys.append(le)
-            labs.append("Len err")
-        if dr is not None:
-            xs.append(1)
-            ys.append(dr)
-            labs.append("Drift %")
-        if ys:
-            ax5.bar(xs, ys, color=["C5", "C6"][: len(ys)], edgecolor="black", linewidth=0.4)
-            ax5.set_xticks(xs)
-            ax5.set_xticklabels(labs, rotation=15, ha="right")
-        ax5.set_title("Normalized / drift")
-        ax5.grid(True, axis="y", alpha=0.35)
-
-        seq = m.get("sequence_name", "")
-        fig.suptitle(f"Trajectory metrics{f' — {seq}' if seq else ''}", fontsize=12)
-        self._save_fig(fig, "evaluation_metrics", tight_layout=False)
-
     def save_all(
         self,
         hist: pd.DataFrame,
@@ -421,13 +437,12 @@ class EkfRunAnalysis:
         metrics_row: Mapping[str, Any] | None = None,
     ) -> None:
         """Write the full PNG bundle into ``self.output_path``."""
-        self.plot_states(hist)
+        _ = metrics_row  # kept for API compatibility; metrics go to CSV only (no metrics PNG)
+        self.plot_states(hist, gt_df=gt_df)
         if merged is not None and not merged.empty:
             self.plot_contacts_grf(hist, merged)
         self.plot_contacts_foot_velocity_world(hist)
         self.plot_trajectory_xy_and_z(hist, gt_df)
-        if metrics_row is not None:
-            self.plot_evaluation_metrics(metrics_row)
 
 
 def save_analysis_bundle(

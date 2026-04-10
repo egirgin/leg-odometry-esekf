@@ -33,7 +33,7 @@ from leg_odom.kinematics.base import BaseKinematics
 INSTANT_FEATURE_SPEC_VERSION = 3
 
 # Bump when the on-disk NN precompute bundle layout or keys change (paths, keys, dtypes).
-NN_PRECOMPUTE_FORMAT_VERSION = 2
+NN_PRECOMPUTE_FORMAT_VERSION = 3
 
 # Fixed scalar keys (each maps to one float from ContactDetectorStepInput).
 _EXACT_SCALAR_FIELDS = frozenset(

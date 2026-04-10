@@ -9,11 +9,11 @@ run:
   name: tartanground_dev
   debug:
     # stderr + per-sequence prints. Live monitor gate parent: live_visualizer.enabled.
-    enabled: false
+    enabled: true
     live_visualizer:
       enabled: true
       sliding_window_s: 10.0
-      buffer_length: 5000
+      buffer_length: 50000
       video_path: null
       # null = redraw every EKF step; set e.g. 100 to cap UI refresh (effective min(hz, dataset_hz))
       hz: 10
@@ -25,7 +25,7 @@ dataset:
   kind: tartanground
   # Absolute path to one trajectory directory (imu.csv + *_bag.csv). Tilde ~ is allowed.
   #sequence_dir: /home/girgine/Documents/leg-odometry/iros/data_anymal
-  sequence_dir: /home/girgine/Documents/leg-odometry/tartanground/processed/Downtown/P2016
+  sequence_dir: /home/girgine/Documents/leg-odometry/tartanground/processed/Downtown/P2001
 
 contact:
   detector: neural
@@ -65,7 +65,7 @@ ekf:
   # Relative to workspace root (repo dir with main.py). Copy to add sensor-specific profiles.
   noise_config: config/ekf_noise/default.yaml
   # Seed p,v,R from merged CSV (needs pos/vel + ori_q* columns); see experiment_parameters_reference.yaml
-  initialize_nominal_from_data: false
+  initialize_nominal_from_data: true
 
 output:
   base_dir: output_tartanground_gru_downtown

@@ -1,0 +1,31 @@
+# Precompute ``precomputed_instants.npz`` (kinematics, GRF, stance). Run:
+#   python -m leg_odom.features.precompute_contact_instants --config <this file>
+
+dataset_root: /home/girgine/Documents/leg-odometry/tartanground/processed/Downtown
+output_root: /home/girgine/Documents/leg-odometry/iros/async_ekf_workspace/leg_odom/features/precomputed_tartan_downtown
+dataset_kind: tartanground
+robot: anymal
+overwrite: false
+verbose: true
+# max_sequences: null
+
+labels:
+  method: grf_threshold
+  grf_threshold:
+    force_threshold: 5.0
+
+# --- gmm_hmm example (replace ``labels`` block above) ---
+# labels:
+#   method: gmm_hmm
+#   gmm_hmm:
+#     mode: offline
+#     history_length: 1
+#     trans_stay: 0.99
+#     degeneracy_max_weight: 0.98
+#     random_state: 42
+#     feature_fields:
+#       - est_tau_calf
+#       - v_foot_body_x
+#       - v_foot_body_y
+#       - v_foot_body_z
+#       - p_foot_body_z

@@ -6,7 +6,7 @@ This package fits **contact classifiers** and **GMM+HMM** weights from **precomp
 
 | Path | Role |
 | ---- | ---- |
-| [`nn/`](nn/) | CNN/GRU training, precomputed I/O, labels via detector **replay**, configs. |
+| [`nn/`](nn/) | CNN/GRU training, precomputed I/O (bundles include stance), configs. |
 | [`gmm/`](gmm/) | Offline fit of 2-component GMM (+ optional post-train replay plot). |
 
 ## UML class diagrams (Mermaid)
@@ -27,6 +27,9 @@ classDiagram
         +sequence_uid int64
         +foot_forces ndarray
         +instants_by_leg dict
+        +stance_by_leg dict
+        +contact_label_method str
+        +contact_labels_config dict
         +field_names tuple
     }
     class TorchDataset {
@@ -76,7 +79,7 @@ precompute_contact_instants  →  precomputed_instants.npz (tree)
 
 **Entry point:** `python -m leg_odom.training.nn.train_contact_nn`
 
-**Purpose:** Load npz bundles from `dataset.precomputed_root` in YAML; build stance labels (e.g. GRF replay or GMM+HMM replay); train CNN or GRU; write checkpoint + `_meta.json` + `_scaler.npz`.
+**Purpose:** Load npz bundles from `dataset.precomputed_root` in YAML (precomputed stance timelines); train CNN or GRU; write checkpoint + `_meta.json` + `_scaler.npz`.
 
 ### Config
 
@@ -84,16 +87,17 @@ precompute_contact_instants  →  precomputed_instants.npz (tree)
 - Ocelot + Go2 example: [`nn/default_train_config_ocelot_go2.yaml`](nn/default_train_config_ocelot_go2.yaml)
 - **`--config`** path to your YAML (see [`nn/config.py`](nn/config.py) for validation rules).
 
-Key sections: `dataset.kind`, `dataset.precomputed_root`, `robot.kinematics`, `architecture` (`cnn`/`gru`), `features.fields`, `labels.method`, `training.*`, `model.window_size`.
+Key sections: `dataset.kind`, `dataset.precomputed_root`, `robot.kinematics`, `architecture` (`cnn`/`gru`), `features.fields`, `training.*`, `model.window_size`, `data_loading.verbose`, `visualization` (`enabled`, `num_train_sections`, `num_test_sections`, `dpi`).
+
+**Plots:** `output.dir/plots/<stem>_training_curves.png` is refreshed every epoch. If `visualization.enabled` is true and the dataset has a test split, then **whenever the best checkpoint improves** the run also writes `output.dir/plots/samples/<stem>_epoch_<k>.png` with random windows labeled `[train]` vs `[test]` (defaults: two of each) so train–test gaps are easy to see. `_meta.json` stores `test_sample_plots_dir` and `test_sample_plot_latest`.
 
 ### Supporting modules (library, not CLIs)
 
 | Module | Role |
 | ------ | ---- |
-| [`nn/discovery.py`](nn/discovery.py) | Discover sequence dirs for precompute/train routing. |
-| [`nn/io_labels.py`](nn/io_labels.py) | Dispatch frame load / discovery by `dataset.kind`. |
-| [`nn/sequence_frames.py`](nn/sequence_frames.py) | Tartanground vs Ocelot merged-frame loaders for training. |
-| [`nn/label_timelines.py`](nn/label_timelines.py) | Pseudo-labels via `build_leg_odometry_dataset` + contact replay. |
+| [`features/discovery.py`](../features/discovery.py) | Discover sequence dirs under a processed CSV tree (precompute). |
+| [`features/nn_sequence_io.py`](../features/nn_sequence_io.py) | Dispatch frame load / discovery by `dataset.kind` for precompute. |
+| [`features/contact_label_timelines.py`](../features/contact_label_timelines.py) | Stance timelines via `build_leg_odometry_dataset` + contact replay (precompute). |
 | [`nn/precomputed_io.py`](nn/precomputed_io.py) | Load/save contract for npz bundles. |
 | [`nn/data.py`](nn/data.py) | PyTorch `Dataset` assembly, sliding windows. |
 | [`nn/models.py`](nn/models.py) | `ContactCNN`, `ContactGRU`. |
