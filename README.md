@@ -34,7 +34,7 @@ python main.py --config config/default_experiment.yaml
    - `output.base_dir` / `output_{run.name}` / `{dataset.kind}` / `{parent(sequence_dir).name}` / `{trajectory_folder}[_timestamp]/`
 3. Write **`experiment_resolved.yaml`** (canonical snapshot with absolute paths).
 4. Run the EKF pipeline on **`dataset[0]`** (one full merged recording).
-5. If debug or analysis flags apply, run post-EKF evaluation/plots ([`leg_odom/run/post_ekf.py`](leg_odom/run/post_ekf.py)).
+5. Run post-EKF evaluation/plots ([`leg_odom/run/post_ekf.py`](leg_odom/run/post_ekf.py)).
 
 `dataset.kind` is **`tartanground`** (imu + one bag CSV) or **`ocelot`** (`lowstate.csv`). Robot model is `robot.kinematics`: **`anymal`** or **`go2`**.
 
@@ -47,8 +47,7 @@ Inside the run directory you typically get:
 | `experiment_resolved.yaml` | Validated experiment config used for this run |
 | `ekf_process_summary.json` | Summary: sequence name, rate, path to history CSV if written |
 | `ekf_history_<sequence>.csv` | Per-step state, contact, ZUPT diagnostics (`sec` + `nanosec` timebase) |
-| `plots/` | When **debug** is on: quick figures + `evaluation_metrics.csv` |
-| `analysis/` | When **run.debug.generate_analysis_plots** (or equivalent) is on: analysis figures + metrics |
+| `plots/` | Always written: post-EKF figures + `evaluation_metrics.csv` |
 
 Trajectory metrics and figures can also be produced via eval CLIs (see below).
 

@@ -14,3 +14,4 @@ tests/
 !/README.md
 !/docs/
 !/examples/
+/leg_odom/training/nn/pretrained_*/

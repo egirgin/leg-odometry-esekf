@@ -8,7 +8,6 @@ run:
   name: ocelot_dev
   debug:
     enabled: true
-    generate_analysis_plots: true
     live_visualizer:
       enabled: true
       sliding_window_s: 10.0

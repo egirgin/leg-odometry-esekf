@@ -131,7 +131,6 @@ def _minimal_cfg(sequence_dir: str, robot: str, dataset_kind: str) -> dict:
             "name": "grf_viz",
             "debug": {
                 "enabled": False,
-                "generate_analysis_plots": False,
                 "live_visualizer": {
                     "enabled": False,
                     "sliding_window_s": 10.0,

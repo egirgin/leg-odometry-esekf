@@ -8,13 +8,10 @@ schema_version: 1
 run:
   name: tartanground_dev
   debug:
-    # stderr, per-sequence prints, post-EKF plots/. Live monitor: live_visualizer.enabled
+    # stderr + per-sequence prints. Live monitor gate parent: live_visualizer.enabled.
     enabled: false
-    # Post-EKF analysis/*.png + evaluation_metrics.csv when true. When enabled: true above,
-    # analysis figures always run regardless of this flag (toggle only applies with debug off).
-    generate_analysis_plots: true
     live_visualizer:
-      enabled: false
+      enabled: true
       sliding_window_s: 10.0
       buffer_length: 5000
       video_path: null
@@ -27,7 +24,8 @@ robot:
 dataset:
   kind: tartanground
   # Absolute path to one trajectory directory (imu.csv + *_bag.csv). Tilde ~ is allowed.
-  sequence_dir: /home/girgine/Documents/leg-odometry/iros/data_anymal
+  #sequence_dir: /home/girgine/Documents/leg-odometry/iros/data_anymal
+  sequence_dir: /home/girgine/Documents/leg-odometry/tartanground/processed/Downtown/P2016
 
 contact:
   detector: neural
@@ -56,7 +54,9 @@ contact:
 
   neural:
     # Repo-relative path (resolved vs workspace root in experiment_resolved.yaml). Sidecars default next to .pt.
-    checkpoint: leg_odom/training/nn/pretrained_gru/contact_gru.pt
+    #checkpoint: leg_odom/training/nn/pretrained_cnn_tartan/contact_cnn.pt
+    checkpoint: leg_odom/training/nn/pretrained_gru_tartan_downtown/contact_gru.pt
+    #checkpoint: leg_odom/training/nn/pretrained_gru_tartan/contact_gru.pt
     stance_probability_threshold: 0.5
     # cpu | cuda | mps | null (auto)
     device: null
@@ -68,5 +68,5 @@ ekf:
   initialize_nominal_from_data: false
 
 output:
-  base_dir: output_tartanground_neural
+  base_dir: output_tartanground_gru_downtown
   include_timestamp: true

@@ -4,13 +4,13 @@ dataset:
   kind: tartanground
   # Alternative: ocelot (lowstate.csv tree).
   # Tree of precomputed_instants.npz (output of precompute_contact_instants --output-root); sequences discovered via rglob.
-  precomputed_root: /home/girgine/Documents/leg-odometry/iros/async_ekf_workspace/leg_odom/features/precomputed_tartan
+  precomputed_root: /home/girgine/Documents/leg-odometry/iros/async_ekf_workspace/leg_odom/features/precomputed_tartan_downtown
 
-architecture: cnn
+architecture: gru
 
 # When output.dir is null or omitted, training uses leg_odom/training/nn/pretrained_{architecture}.
 output:
-  dir: leg_odom/training/nn/pretrained_cnn_tartan
+  dir: leg_odom/training/nn/pretrained_gru_tartan_downtown
 
 robot:
   kinematics: anymal
@@ -83,6 +83,6 @@ visualization:
   enabled: true
   num_sections: 4
   dpi: 150
-  filename: contact_nn_cnn_tartan_sections.png
+  filename: contact_nn_gru_tartan_downtown_sections.png
 
 

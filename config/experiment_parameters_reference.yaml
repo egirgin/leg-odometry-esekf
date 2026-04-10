@@ -10,8 +10,6 @@ run:
   name: placeholder_run_name
   debug:
     enabled: false
-    # When enabled is true, post-EKF analysis/ is always written; this flag only applies when debug is off.
-    generate_analysis_plots: false
     live_visualizer:
       enabled: false
       sliding_window_s: 60.0
@@ -85,4 +83,4 @@ output:
   include_timestamp: true
 
 # main.py CLI: --config only. Set run.name, dataset.sequence_dir, dataset.kind, run.debug (mapping), etc. in YAML.
-# Use run.debug.generate_analysis_plots for post-EKF analysis/ (not output.run_analysis_after_ekf).
+# Post-EKF figures + evaluation_metrics.csv are always written under plots/.

@@ -24,7 +24,6 @@ from pathlib import Path
 from leg_odom.run.ekf_process import run_ekf_pipeline
 from leg_odom.run.experiment_config import (
     debug_effective_from_cli,
-    generate_analysis_plots_enabled,
     live_visualizer_effective,
     load_experiment_yaml,
 )
@@ -77,18 +76,11 @@ def _run_experiment(*, config_path: Path, workspace_root: Path) -> int:
     )
     if summary.ekf_history_csv:
         print(f"[ekf] history csv: {summary.ekf_history_csv}")
-    gen_plots = generate_analysis_plots_enabled(resolved_cfg)
-    if debug_on or gen_plots:
-        from leg_odom.run.post_ekf import run_post_ekf_analysis_and_eval
+    from leg_odom.run.post_ekf import run_post_ekf_analysis_and_eval
 
-        if debug_on:
-            run_post_ekf_analysis_and_eval(
-                run_dir, resolved_cfg, summary, output_subdir="plots"
-            )
-        if gen_plots:
-            run_post_ekf_analysis_and_eval(
-                run_dir, resolved_cfg, summary, output_subdir="analysis"
-            )
+    run_post_ekf_analysis_and_eval(
+        run_dir, resolved_cfg, summary, output_subdir="plots"
+    )
     return 0
 
 

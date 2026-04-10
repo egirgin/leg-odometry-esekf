@@ -201,7 +201,6 @@ def main() -> None:
             "name": "train_gmm_plot",
             "debug": {
                 "enabled": False,
-                "generate_analysis_plots": False,
                 "live_visualizer": {
                     "enabled": False,
                     "sliding_window_s": 10.0,

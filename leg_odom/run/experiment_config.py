@@ -55,7 +55,6 @@ def default_experiment_dict() -> dict[str, Any]:
             "name": "unnamed_run",
             "debug": {
                 "enabled": False,
-                "generate_analysis_plots": False,
                 "live_visualizer": {
                     "enabled": False,
                     "sliding_window_s": 10.0,
@@ -211,9 +210,7 @@ def validate_experiment_dict(
 
     dbg = cfg["run"].get("debug")
     if not isinstance(dbg, Mapping):
-        raise TypeError(
-            "run.debug must be a mapping with enabled, generate_analysis_plots, live_visualizer"
-        )
+        raise TypeError("run.debug must be a mapping with enabled and live_visualizer")
     if not isinstance(dbg.get("enabled"), bool):
         raise TypeError("run.debug.enabled must be a boolean")
 
@@ -249,9 +246,6 @@ def validate_experiment_dict(
             raise ValueError(
                 "run.debug.live_visualizer.hz must be null/omitted or a finite positive number"
             )
-
-    if not isinstance(dbg.get("generate_analysis_plots"), bool):
-        raise TypeError("run.debug.generate_analysis_plots must be a boolean")
 
     out_base = cfg["output"]["base_dir"]
     if not isinstance(out_base, str) or not str(out_base).strip():
@@ -454,27 +448,9 @@ def resolve_contact_neural_paths(cfg: dict[str, Any], workspace_root: Path) -> N
 
 # --- Debug / analysis / live visualizer (read merged cfg) --------------------------------------
 #
-#   generate_analysis_plots  → post-EKF ``analysis/`` when true in YAML **and** debug is off.
-#       When ``debug_effective_from_cli`` is true, analysis figures are **always** produced
-#       (``generate_analysis_plots_enabled`` returns true) regardless of the YAML flag.
 #   debug_enabled            → YAML run.debug.enabled only.
 #   debug_effective_from_cli → above OR programmatic cli_debug (tests / future CLI).
 #   live_visualizer_effective → effective debug AND live_visualizer.enabled (matplotlib loop).
-
-
-def generate_analysis_plots_enabled(
-    cfg: Mapping[str, Any], *, cli_debug: bool = False
-) -> bool:
-    """
-    True if post-EKF ``analysis/`` should run: effective debug **or**
-    ``run.debug.generate_analysis_plots`` in YAML.
-    """
-    if debug_effective_from_cli(cfg, cli_debug=cli_debug):
-        return True
-    d = cfg.get("run", {}).get("debug")
-    if not isinstance(d, Mapping):
-        return False
-    return bool(d.get("generate_analysis_plots", False))
 
 
 def debug_enabled(cfg: Mapping[str, Any]) -> bool:

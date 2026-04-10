@@ -1,11 +1,10 @@
 """
-After EKF: analysis PNGs + ``evaluation_metrics.csv`` under ``<run_dir>/<output_subdir>/``.
+After EKF: plot PNGs + ``evaluation_metrics.csv`` under ``<run_dir>/<output_subdir>/``.
 
 Uses ``dataset[0]`` (single-sequence Tartanground) for merged frames and GT when plotting.
 
-``main.py`` may call this twice: ``plots/`` when debug is effective, ``analysis/`` when
-post-EKF analysis is enabled (YAML ``generate_analysis_plots`` or forced when debug is on).
-Figures are written directly under ``analysis/`` or ``plots/`` (no extra sequence subfolder).
+``main.py`` calls this once and writes artifacts under ``plots/``.
+Figures are written directly under ``plots/`` (no extra sequence subfolder).
 """
 
 from __future__ import annotations
@@ -26,14 +25,14 @@ def run_post_ekf_analysis_and_eval(
     resolved_cfg: Mapping[str, Any],
     summary: EkfProcessSummary,
     *,
-    output_subdir: str = "analysis",
+    output_subdir: str = "plots",
 ) -> None:
     """
     When ``summary.ekf_history_csv`` is set, write
     ``<run_dir>/<output_subdir>/*.png`` and one evaluation row;
     then save ``<run_dir>/<output_subdir>/evaluation_metrics.csv``.
 
-    Use ``output_subdir="plots"`` when running from debug mode (see ``main.py``).
+    Default ``output_subdir`` is ``plots`` (see ``main.py``).
     """
     run_dir = Path(run_dir)
     out_root = run_dir / output_subdir
