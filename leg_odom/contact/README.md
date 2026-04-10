@@ -63,7 +63,8 @@ Full-package UML: [docs/CLASS_DIAGRAM.md](../../docs/CLASS_DIAGRAM.md).
 | ------ | ---- |
 | [`base.py`](base.py) | `BaseContactDetector`, `ContactDetectorStepInput`, `ContactEstimate`, ZUPT helper. |
 | [`replay_timeline.py`](replay_timeline.py) | Run a list of detectors over a merged `DataFrame` + kinematics (used by EKF tooling, training labels, CLIs). |
-| [`grf_stance_plot.py`](grf_stance_plot.py) | Matplotlib GRF / stance overview (shared by CLIs and `train_gmm` plot). |
+| [`grf_stance_plot.py`](grf_stance_plot.py) | Matplotlib GRF / stance overview (optional per-leg energy row); shared by CLIs and `train_gmm` / `train_dual_hmm` plots. |
+| [`gmm_hmm_core/`](gmm_hmm_core/) | Shared `TwoStateGaussianHMM`, `fit_gmm_ordered`, offline per-leg fits, single + dual pretrained `.npz` I/O, `zupt_R_foot_from_p_stance`. |
 
 ## Concrete detectors
 
@@ -72,9 +73,10 @@ Full-package UML: [docs/CLASS_DIAGRAM.md](../../docs/CLASS_DIAGRAM.md).
 | GRF threshold | [`grf_threshold.py`](grf_threshold.py) | `grf_threshold` |
 | GMM + HMM | [`gmm_hmm/`](gmm_hmm/) | `gmm` |
 | Neural (CNN/GRU) | [`neural.py`](neural.py) | `neural` |
-| Dual HMM / Ocelot | [`dual_hmm_fusion.py`](dual_hmm_fusion.py), [`ocelot.py`](ocelot.py) | Stubs / future |
+| Dual HMM (always GRF + kin fused; optional energy on kin) | [`dual_hmm/`](dual_hmm/), re-export [`dual_hmm_fusion.py`](dual_hmm_fusion.py) | `dual_hmm` |
+| Ocelot | [`ocelot.py`](ocelot.py) | Stub / future |
 
-**Neural** weights come from [`leg_odom.training.nn.train_contact_nn`](../training/nn/train_contact_nn.py); **GMM** npz from [`leg_odom.training.gmm.train_gmm`](../training/gmm/train_gmm.py). **GRF threshold** uses only merged logs (no precompute).
+**Neural** weights come from [`leg_odom.training.nn.train_contact_nn`](../training/nn/train_contact_nn.py); **GMM** npz from [`leg_odom.training.gmm.train_gmm`](../training/gmm/train_gmm.py); **dual HMM** pooled fallback npz from [`leg_odom.training.dual_hmm.train_dual_hmm`](../training/dual_hmm/train_dual_hmm.py). Shared GMM ordering + pretrained I/O: [`gmm_hmm_core/`](gmm_hmm_core/). **GRF threshold** uses only merged logs (no precompute).
 
 ## Standalone scripts (no EKF `main.py`)
 
@@ -94,9 +96,17 @@ Notable args: `--sequence-dir`, `--dataset-kind` (`tartanground` or `ocelot`), `
 python -m leg_odom.contact.gmm_hmm.visualize --help
 ```
 
-Notable args: `--sequence-dir`, `--dataset-kind`, `--robot-kinematics`, `--mode` (`offline` / `online`), `--pretrained-path` (required for `online`), `--feature-fields`, `--history-length`, `--save`.
+Notable args: `--sequence-dir`, `--dataset-kind`, `--robot-kinematics`, `--mode` (`offline` / `online`), `--pretrained-path` (required for `online`), `--feature-fields`, `--history-length` (online only; offline is always `N=1`), `--save`.
 
 **Offline** mode fits from the loaded recording; **online** loads a pretrained `.npz` from training.
+
+### Dual HMM visualization
+
+```bash
+python -m leg_odom.contact.dual_hmm.visualize --help
+```
+
+Same pattern as GMM+HMM: `--mode offline|online`, kin `--feature-fields` (no `grf_n`), `--history-length` (used in **online** only; **offline** forces `N=1`), `--use-energy` adds a second row per leg (normalized energy), `--pretrained-path` for online (from `train_dual_hmm`). Dual **always** fuses load + kin; for GRF-only or kin-only contact use `contact.detector: gmm`.
 
 ## Relationship to the EKF
 

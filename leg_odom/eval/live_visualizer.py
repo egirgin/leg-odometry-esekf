@@ -236,8 +236,8 @@ class LiveVisualizer:
                     gx, gy, color="#444444", linestyle="--", lw=1.0, alpha=0.5, label="GT"
                 )
 
-        self.traj_x_hist: deque[float] = deque(maxlen=5000)
-        self.traj_y_hist: deque[float] = deque(maxlen=5000)
+        self.traj_x_hist: list[float] = []
+        self.traj_y_hist: list[float] = []
         self.line_traj, = self.ax_traj.plot([], [], color="#007ACC", lw=2.5, label="Estimated")
         self.point_head, = self.ax_traj.plot(
             [], [], marker="o", color="#D93025", markersize=6, zorder=5
@@ -426,8 +426,10 @@ class LiveVisualizer:
 
     def _apply_sliding_xlims(self, t_now: float) -> tuple[float, float]:
         t_lo, t_hi = self._sliding_time_limits(t_now)
-        self.ax_vel.set_xlim(t_lo, t_hi)
-        self.ax_pz.set_xlim(t_lo, t_hi)
+        # Matplotlib warns if xlim left == right (first step: t_now == t_start).
+        x_hi = t_hi if t_hi > t_lo else t_lo + 1e-6
+        self.ax_vel.set_xlim(t_lo, x_hi)
+        self.ax_pz.set_xlim(t_lo, x_hi)
         return t_lo, t_hi
 
     def _gt_mask(self, t_lo: float, t_hi: float) -> np.ndarray | None:

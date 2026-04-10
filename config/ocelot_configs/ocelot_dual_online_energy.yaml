@@ -1,0 +1,59 @@
+# Dual HMM — online + pretrained dual .npz + energy on kin branch.
+# conda run -n leg-odometry python main.py --config config/ocelot_configs/ocelot_dual_online_energy.yaml
+
+schema_version: 1
+
+run:
+  name: ocelot_dual_online_energy
+  debug:
+    enabled: true
+    live_visualizer:
+      enabled: true
+      sliding_window_s: 10.0
+      buffer_length: 5000
+      video_path: null
+      hz: 10
+
+robot:
+  kinematics: go2
+
+dataset:
+  kind: ocelot
+  sequence_dir: /home/girgine/Documents/leg-odometry/iros/data/14_43_46
+
+contact:
+  detector: dual_hmm
+  dual_hmm:
+    mode: online
+    pretrained_path: /home/girgine/Documents/leg-odometry/iros/async_ekf_workspace/leg_odom/training/dual_hmm/weights.npz
+    feature_fields:
+      - est_tau_calf
+      - v_foot_body_x
+      - v_foot_body_y
+      - v_foot_body_z
+      - p_foot_body_z
+    history_length: 1
+    trans_stay: 0.99
+    fit_interval: 250
+    window_size: 500
+    degeneracy_max_weight: 0.98
+    random_state: 42
+    use_energy: true
+    kinematics_z_stationary_std_skip: 0.005
+    energy_percentile: 98.0
+    energy_norm_window: 2000
+    energy_spike_min: 0.05
+    initial_gamma: 1.0
+    learning_rate_gamma: 0.1
+    gamma_min: 1.0
+    gamma_max: 15.0
+    gamma_learning_multiplier_high: 5.0
+    verbose: true
+
+ekf:
+  noise_config: config/ekf_noise/default.yaml
+  initialize_nominal_from_data: false
+
+output:
+  base_dir: output_ocelot
+  include_timestamp: true

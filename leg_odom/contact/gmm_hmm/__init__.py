@@ -12,8 +12,12 @@ from leg_odom.contact.gmm_hmm.detector import (
 )
 from leg_odom.contact.gmm_hmm.fitting import (
     fit_gmm_ordered,
+    fit_offline_dual_per_leg,
+    fit_offline_load_grf_per_leg,
     fit_offline_per_leg,
+    load_pretrained_dual_hmm_npz,
     load_pretrained_gmm_npz,
+    save_pretrained_dual_hmm_npz,
 )
 from leg_odom.contact.gmm_hmm.hmm_gaussian import TwoStateGaussianHMM
 from leg_odom.features import (
@@ -42,12 +46,16 @@ __all__ = [
     "build_gmm_hmm_detectors_from_cfg",
     "build_timeline_features_for_leg",
     "fit_gmm_ordered",
+    "fit_offline_dual_per_leg",
+    "fit_offline_load_grf_per_leg",
     "fit_offline_per_leg",
     "flatten_history_window",
     "instant_vector_from_step",
     "is_allowed_instant_field",
+    "load_pretrained_dual_hmm_npz",
     "load_pretrained_gmm_npz",
     "parse_instant_feature_fields",
+    "save_pretrained_dual_hmm_npz",
     "sliding_windows_flat",
     "stance_height_meta_index",
     "zupt_R_foot_from_p_stance",

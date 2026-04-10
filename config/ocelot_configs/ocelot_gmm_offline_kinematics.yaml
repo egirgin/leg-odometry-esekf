@@ -1,0 +1,48 @@
+# GMM+HMM — offline (whole-sequence fit per leg before EKF). Default kinematic features (not GRF-only; see ocelot_gmm_offline_grf.yaml).
+# conda run -n leg-odometry python main.py --config config/ocelot_configs/ocelot_gmm_offline.yaml
+
+schema_version: 1
+
+run:
+  name: ocelot_gmm_offline
+  debug:
+    enabled: true
+    live_visualizer:
+      enabled: true
+      sliding_window_s: 10.0
+      buffer_length: 5000
+      video_path: null
+      hz: 10
+
+robot:
+  kinematics: go2
+
+dataset:
+  kind: ocelot
+  sequence_dir: /home/girgine/Documents/leg-odometry/iros/data/14_43_46
+
+contact:
+  detector: gmm
+  gmm:
+    mode: offline
+    pretrained_path: null
+    feature_fields:
+      - est_tau_calf
+      - v_foot_body_x
+      - v_foot_body_y
+      - v_foot_body_z
+      - p_foot_body_z
+    history_length: 1
+    trans_stay: 0.99
+    fit_interval: 250
+    window_size: 500
+    degeneracy_max_weight: 0.98
+    random_state: 42
+
+ekf:
+  noise_config: config/ekf_noise/default.yaml
+  initialize_nominal_from_data: false
+
+output:
+  base_dir: output_ocelot
+  include_timestamp: true

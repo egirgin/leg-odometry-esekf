@@ -1,5 +1,10 @@
 """
-Fit a 2-component GMM on sliding-window features and save a pretrained ``.npz``.
+Fit a 2-component GMM on **pooled instant** features and save a pretrained ``.npz``.
+
+All discovered ``precomputed_instants.npz`` files under ``--precomputed-root`` (optionally capped by
+``--max-sequences``) are merged: per bundle, per leg, **full-sequence instant rows** (no multi-step
+windows) are stacked, then **one** global 2-GMM is fit. ``trans_stay`` for the saved file and the
+optional post-train HMM replay plot is fixed at ``0.99`` in code (GMM training does not optimize it).
 
 Reads ``precomputed_instants.npz`` bundles (same as NN contact training). Run precompute first::
 
@@ -12,7 +17,7 @@ Then::
 
     python -m leg_odom.training.gmm.train_gmm \\
       --precomputed-root leg_odom/features/precomputed \\
-      --output leg_odom/training/gmm/weights.npz --history-length 1
+      --output leg_odom/training/gmm/weights.npz
 
 Optional: ``--max-sequences N`` uses only the first N bundles after discovery order (CPU efficiency).
 """
@@ -33,7 +38,6 @@ from leg_odom.contact.gmm_hmm import (
     INSTANT_FEATURE_SPEC_VERSION,
     fit_gmm_ordered,
     parse_instant_feature_fields,
-    sliding_windows_flat,
     stance_height_meta_index,
 )
 from leg_odom.contact.gmm_hmm.detector import GmmHmmContactDetector
@@ -43,6 +47,10 @@ from leg_odom.run.dataset_factory import build_leg_odometry_dataset
 from leg_odom.run.kinematics_factory import build_kinematics_backend, build_kinematics_by_name
 from leg_odom.training.nn.dataset_kind import infer_dataset_kind_from_sequence_dir
 from leg_odom.training.nn.precomputed_io import discover_precomputed_instants_npz, load_precomputed_sequence_npz
+
+# Pretrain uses instant emissions only; HMM uses this transition prior in .npz and post-train replay.
+_PRETRAIN_HISTORY_LENGTH = 1
+_PRETRAINED_TRANS_STAY = 0.99
 
 
 def save_pretrained_gmm_npz(
@@ -119,9 +127,7 @@ def _parse_args() -> argparse.Namespace:
         default=",".join(DEFAULT_INSTANT_FEATURE_FIELDS),
         help="Comma-separated names (ALLOWED_INSTANT_FEATURE_FIELDS in leg_odom/features/instant_spec.py)",
     )
-    p.add_argument("--history-length", type=int, default=1)
     p.add_argument("--output", type=str, default="leg_odom/training/gmm/weights.npz", help="Output .npz path")
-    p.add_argument("--trans-stay", type=float, default=0.99)
     p.add_argument("--random-state", type=int, default=42)
     p.add_argument(
         "--skip-train-plot",
@@ -135,7 +141,6 @@ def main() -> None:
     args = _parse_args()
     fields = tuple(s.strip() for s in args.feature_fields.split(",") if s.strip())
     spec = parse_instant_feature_fields(fields)
-    n = int(args.history_length)
     robot = str(args.robot_kinematics)
 
     root = Path(args.precomputed_root).expanduser().resolve()
@@ -159,16 +164,18 @@ def main() -> None:
         for leg in range(n_legs):
             full = bundle.instants_by_leg[leg]
             inst = subset_instant_columns(full, FULL_OFFLINE_INSTANT_FIELDS, spec.fields)
-            Xb = sliding_windows_flat(inst, n)
+            Xb = np.asarray(inst, dtype=np.float64)
             if Xb.size:
                 X_blocks.append(Xb)
 
     if not X_blocks:
-        raise RuntimeError("No feature windows; check precomputed length vs history-length")
+        raise RuntimeError("No feature rows; check precomputed instants and feature-fields")
     X = np.vstack(X_blocks)
-    mo, co, bad = fit_gmm_ordered(X, spec, n, random_state=int(args.random_state))
+    mo, co, bad = fit_gmm_ordered(
+        X, spec, _PRETRAIN_HISTORY_LENGTH, random_state=int(args.random_state)
+    )
     if bad:
-        raise RuntimeError("GMM fit failed or degenerate; try more data, N=1, or different features")
+        raise RuntimeError("GMM fit failed or degenerate; try more data or different features")
 
     out = Path(args.output).expanduser()
     save_pretrained_gmm_npz(
@@ -176,10 +183,10 @@ def main() -> None:
         means=mo,
         covariances=co,
         feature_fields=spec.fields,
-        history_length=n,
+        history_length=_PRETRAIN_HISTORY_LENGTH,
         instant_dim=spec.instant_dim,
         stance_height_feature_index=stance_height_meta_index(spec),
-        trans_stay=float(args.trans_stay),
+        trans_stay=_PRETRAINED_TRANS_STAY,
         feature_spec_version=INSTANT_FEATURE_SPEC_VERSION,
         n_samples=int(X.shape[0]),
         random_state=int(args.random_state),
@@ -230,8 +237,8 @@ def main() -> None:
     dets = [
         GmmHmmContactDetector(
             feature_fields=fields,
-            history_length=n,
-            trans_stay=float(args.trans_stay),
+            history_length=_PRETRAIN_HISTORY_LENGTH,
+            trans_stay=_PRETRAINED_TRANS_STAY,
             mode="online",
             pretrained_path=str(out_resolved),
             fit_interval=250,

@@ -1,7 +1,17 @@
 """
-Dual HMM fusion (GRF + kinematics), energy-modulated transitions when enabled.
+Dual HMM fusion (GRF + kinematics), optional energy-modulated kin transitions.
 
-Source: ``legacy/dual_hmm.py`` until migration.
+Implementation: :mod:`leg_odom.contact.dual_hmm`.
 """
 
-# Placeholder module — Phase 2.
+from leg_odom.contact.dual_hmm import (
+    DualHmmContactDetector,
+    build_dual_hmm_detectors_from_cfg,
+    parse_dual_kinematic_feature_fields,
+)
+
+__all__ = [
+    "DualHmmContactDetector",
+    "build_dual_hmm_detectors_from_cfg",
+    "parse_dual_kinematic_feature_fields",
+]

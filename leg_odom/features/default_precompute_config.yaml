@@ -1,8 +1,8 @@
 # Precompute ``precomputed_instants.npz`` (kinematics, GRF, stance). Run:
 #   python -m leg_odom.features.precompute_contact_instants --config <this file>
 
-dataset_root: /home/girgine/Documents/leg-odometry/tartanground/processed/Downtown
-output_root: /home/girgine/Documents/leg-odometry/iros/async_ekf_workspace/leg_odom/features/precomputed_tartan_downtown
+dataset_root: /home/girgine/Documents/leg-odometry/tartanground/processed
+output_root: /home/girgine/Documents/leg-odometry/iros/async_ekf_workspace/leg_odom/features/precomputed_tartan
 dataset_kind: tartanground
 robot: anymal
 overwrite: false
@@ -12,14 +12,14 @@ verbose: true
 labels:
   method: grf_threshold
   grf_threshold:
-    force_threshold: 5.0
+    force_threshold: 3.0
 
 # --- gmm_hmm example (replace ``labels`` block above) ---
 # labels:
 #   method: gmm_hmm
 #   gmm_hmm:
 #     mode: offline
-#     history_length: 1
+#     history_length: 1  # optional; offline coerces to instant N=1
 #     trans_stay: 0.99
 #     degeneracy_max_weight: 0.98
 #     random_state: 42
@@ -29,3 +29,18 @@ labels:
 #       - v_foot_body_y
 #       - v_foot_body_z
 #       - p_foot_body_z
+#
+# --- dual_hmm example (offline only for precompute) ---
+# labels:
+#   method: dual_hmm
+#   dual_hmm:
+#     mode: offline
+#     feature_fields:
+#       - est_tau_calf
+#       - v_foot_body_x
+#       - v_foot_body_y
+#       - v_foot_body_z
+#       - p_foot_body_z
+#     history_length: 1  # optional; offline kin coerces to N=1
+#     trans_stay: 0.99
+#     use_energy: false

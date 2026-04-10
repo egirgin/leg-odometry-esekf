@@ -50,12 +50,45 @@ contact:
       - v_foot_body_y
       - v_foot_body_z
       - p_foot_body_z
-    history_length: 1  # must be 1 when mode is offline
+    # Offline: YAML value ignored; fit and runtime always use instant N=1. Online: sliding window N.
+    history_length: 1
     trans_stay: 0.99
     fit_interval: 250
     window_size: 500
     degeneracy_max_weight: 0.98
     random_state: 42
+  # Dual HMM: always fuses 1D GRF + kinematic HMMs (optional energy on kin). Single-modality → contact.gmm.
+  # Pretrained fallback for online: python -m leg_odom.training.dual_hmm.train_dual_hmm --precomputed-root …
+  dual_hmm:
+    # offline = per-leg whole-sequence GMM on GRF + kin before EKF (needs recording).
+    # online = sliding refit + fallback to dual .npz (relative → leg_odom/training/dual_hmm/).
+    mode: offline
+    pretrained_path: null
+    # Kinematic instant fields only (no grf_n); subset of ALLOWED_INSTANT_FEATURE_FIELDS in instant_spec.py
+    feature_fields:
+      - est_tau_calf
+      - v_foot_body_x
+      - v_foot_body_y
+      - v_foot_body_z
+      - p_foot_body_z
+    # Offline: YAML history_length ignored; kin N=1. Online: must match pretrained .npz.
+    history_length: 1
+    trans_stay: 0.99
+    fit_interval: 250
+    window_size: 500
+    degeneracy_max_weight: 0.98
+    random_state: 42
+    use_energy: false
+    kinematics_z_stationary_std_skip: 0.005
+    energy_percentile: 98.0
+    energy_norm_window: 2000
+    energy_spike_min: 0.05
+    initial_gamma: 1.0
+    learning_rate_gamma: 0.1
+    gamma_min: 1.0
+    gamma_max: 15.0
+    gamma_learning_multiplier_high: 5.0
+    verbose: false
   # CNN/GRU from leg_odom.training.nn.train_contact_nn — artifacts under training/nn/pretrained_{cnn,gru}/
   neural:
     # Required: repo-relative path, e.g. leg_odom/training/nn/pretrained_gru/contact_gru.pt
@@ -81,6 +114,9 @@ ekf:
 output:
   base_dir: output_leg_odom
   include_timestamp: true
+
+# NN precompute labels: duplicate contact.dual_hmm under labels.dual_hmm when labels.method: dual_hmm
+# (precompute / training validation: mode must be offline; no pretrained_path).
 
 # main.py CLI: --config only. Set run.name, dataset.sequence_dir, dataset.kind, run.debug (mapping), etc. in YAML.
 # Post-EKF figures + evaluation_metrics.csv are always written under plots/.

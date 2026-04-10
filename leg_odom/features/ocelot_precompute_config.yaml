@@ -1,0 +1,12 @@
+dataset_root: /home/girgine/Documents/leg-odometry/iros/data
+output_root: /home/girgine/Documents/leg-odometry/iros/async_ekf_workspace/leg_odom/features/precomputed_ocelot_single
+dataset_kind: ocelot
+robot: go2
+overwrite: true
+verbose: true
+max_sequences: 1
+
+labels:
+  method: grf_threshold
+  grf_threshold:
+    force_threshold: 25.0

@@ -3,10 +3,9 @@ Per-foot contact detector: 2-GMM emissions + 2-state Gaussian HMM filter.
 
 **Modes**
 
-- ``offline``: mixture parameters come from a **whole-sequence** fit (no .npz). Requires
-  ``history_length == 1``: emissions are Gaussians in **instant** space ``ℝ^d``; each ``update``
-  runs the HMM on the **current** instant only (no multi-step runtime buffer). Use ``online``
-  with a pretrained ``.npz`` if you need ``history_length > 1``.
+- ``offline``: mixture parameters come from a **whole-sequence** fit (no .npz). Emissions are
+  always **instant** Gaussians in ``ℝ^d`` (YAML ``history_length`` is **ignored**; internally
+  ``N=1``). Use ``online`` with a pretrained ``.npz`` if you need ``history_length > 1``.
 - ``online``: start from a **pretrained** ``.npz`` (initial emissions + fault-tolerant fallback).
   A sliding buffer periodically refits the GMM; degenerate fits revert to last good or pretrained.
 
@@ -45,25 +44,16 @@ from leg_odom.features import (
     instant_vector_from_step,
     parse_instant_feature_fields,
 )
-from leg_odom.contact.gmm_hmm.fitting import fit_gmm_ordered, fit_offline_per_leg, load_pretrained_gmm_npz
-from leg_odom.contact.gmm_hmm.hmm_gaussian import TwoStateGaussianHMM
+from leg_odom.contact.gmm_hmm_core.fitting import fit_gmm_ordered, fit_offline_per_leg, load_pretrained_gmm_npz
+from leg_odom.contact.gmm_hmm_core.hmm_gaussian import TwoStateGaussianHMM
+from leg_odom.contact.gmm_hmm_core.zupt import ZUPT_P_STANCE_FLOOR, zupt_R_foot_from_p_stance
 from leg_odom.contact.gmm_hmm.paths import resolve_pretrained_gmm_path
 from leg_odom.datasets.types import LegOdometrySequence
 from leg_odom.kinematics.base import BaseKinematics
 
-# Floor on p_stance when mapping to isotropic variance 1/p for ZUPT (avoid div-by-zero).
-ZUPT_P_STANCE_FLOOR = 1e-9
-
-
-def zupt_R_foot_from_p_stance(p_stance: float) -> npt.NDArray[np.float64]:
-    """``R = (1 / max(p_stance, ε)) I₃`` — variance per world velocity component (m/s)² scale."""
-    pe = max(float(p_stance), ZUPT_P_STANCE_FLOOR)
-    v = 1.0 / pe
-    return np.eye(3, dtype=np.float64) * v
-
 
 class GmmHmmContactDetector(BaseContactDetector):
-    """``feature_dim == N * d_instant``, ``history_length == N``; offline requires ``N == 1``."""
+    """``feature_dim == N * d_instant``, ``history_length == N``; offline always uses ``N == 1``."""
 
     def __init__(
         self,
@@ -82,14 +72,10 @@ class GmmHmmContactDetector(BaseContactDetector):
     ) -> None:
         super().__init__()
         self._spec = parse_instant_feature_fields(feature_fields or DEFAULT_INSTANT_FEATURE_FIELDS)
-        self._N = int(history_length)
-        if self._N < 1:
+        n_arg = int(history_length)
+        if n_arg < 1:
             raise ValueError("history_length must be >= 1")
-        if mode == "offline" and self._N != 1:
-            raise ValueError(
-                "offline GMM+HMM requires history_length=1 (instant emissions only). "
-                "Use mode='online' with a pretrained .npz for history_length > 1."
-            )
+        self._N = 1 if mode == "offline" else n_arg
         self._D = self._N * self._spec.instant_dim
         self._trans_stay = float(trans_stay)
         self._mode: Literal["offline", "online"] = mode
@@ -254,16 +240,12 @@ def build_gmm_hmm_detectors_from_cfg(
     if not isinstance(fields_raw, (list, tuple)):
         raise TypeError("contact.gmm.feature_fields must be a list")
     feature_fields = tuple(str(x) for x in fields_raw)
-    history_length = int(gmm_cfg.get("history_length", 1))
+    history_length_yaml = int(gmm_cfg.get("history_length", 1))
     trans_stay = float(gmm_cfg.get("trans_stay", 0.99))
     mode = str(gmm_cfg.get("mode", "offline")).lower()
     if mode not in ("offline", "online"):
         raise ValueError(f"contact.gmm.mode must be offline|online, got {mode!r}")
-    if mode == "offline" and history_length != 1:
-        raise ValueError(
-            "contact.gmm: mode offline requires history_length=1 (instant emissions). "
-            "Use mode online with pretrained_path for history_length > 1."
-        )
+    history_length = 1 if mode == "offline" else history_length_yaml
 
     fit_interval = int(gmm_cfg.get("fit_interval", 250))
     window_size = int(gmm_cfg.get("window_size", 500))
@@ -279,7 +261,7 @@ def build_gmm_hmm_detectors_from_cfg(
             recording,
             kin_model,
             feature_fields=feature_fields,
-            history_length=history_length,
+            history_length=1,
             random_state=random_state,
         )
 

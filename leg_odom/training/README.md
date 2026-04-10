@@ -1,13 +1,14 @@
-# Training: neural and GMM contact models
+# Training: neural, GMM, and dual HMM contact models
 
-This package fits **contact classifiers** and **GMM+HMM** weights from **precomputed** per-sequence features. It does **not** require importing the EKF core; it uses the same **dataset kinds**, **kinematics**, and **merged frames** as the main pipeline.
+This package fits **contact classifiers**, **GMM+HMM** weights, and **dual HMM** (load + kin) pooled priors from **precomputed** per-sequence features. It does **not** require importing the EKF core; it uses the same **dataset kinds**, **kinematics**, and **merged frames** as the main pipeline.
 
 ## Layout
 
 | Path | Role |
 | ---- | ---- |
 | [`nn/`](nn/) | CNN/GRU training, precomputed I/O (bundles include stance), configs. |
-| [`gmm/`](gmm/) | Offline fit of 2-component GMM (+ optional post-train replay plot). |
+| [`gmm/`](gmm/) | Pooled instant features → one 2-GMM; optional post-train HMM replay plot (`trans_stay=0.99` fixed in script). |
+| [`dual_hmm/`](dual_hmm/) | Pooled 1D GRF + pooled instant kin rows → dual `.npz` for `contact.detector: dual_hmm` online fallback. |
 
 ## UML class diagrams (Mermaid)
 
@@ -63,16 +64,16 @@ Package-wide diagrams: [docs/CLASS_DIAGRAM.md](../../docs/CLASS_DIAGRAM.md).
 
 ## Dependency: precompute first
 
-Both tracks expect a directory tree of **`precomputed_instants.npz`** files (see [`leg_odom/features/README.md`](../features/README.md)).
+All tracks expect a directory tree of **`precomputed_instants.npz`** files (see [`leg_odom/features/README.md`](../features/README.md)).
 
 ```text
 precompute_contact_instants  →  precomputed_instants.npz (tree)
                                       ↓
-                          train_contact_nn  /  train_gmm
+              train_contact_nn  /  train_gmm  /  train_dual_hmm
                                       ↓
-                    .pt + meta + scaler  |  .npz weights
+        .pt + meta + scaler  |  gmm .npz  |  dual_hmm .npz
                                       ↓
-                    experiment YAML (contact.neural / contact.gmm)
+        experiment YAML (contact.neural / contact.gmm / contact.dual_hmm)
 ```
 
 ## Script: neural contact training
@@ -106,7 +107,7 @@ Key sections: `dataset.kind`, `dataset.precomputed_root`, `robot.kinematics`, `a
 
 **Entry point:** `python -m leg_odom.training.gmm.train_gmm`
 
-**Purpose:** Stack sliding-window features from all `precomputed_instants.npz` under `--precomputed-root`, fit ordered 2-GMM, save **`.npz`** for online HMM (`train_gmm.py` docstring lists full CLI).
+**Purpose:** Merge **all** discovered bundles under `--precomputed-root` (or the first `--max-sequences` N after discovery order) into one pool: per bundle × leg, stack **full-sequence instant rows** (no multi-step windows), `vstack`, then fit **one** ordered 2-GMM. Saved `.npz` uses `history_length=1` and `trans_stay=0.99` (fixed in code; used when loading the HMM at runtime / for the optional post-train replay plot).
 
 ### Common arguments
 
@@ -116,14 +117,20 @@ Key sections: `dataset.kind`, `dataset.precomputed_root`, `robot.kinematics`, `a
 | `--output` | Output `.npz` path (default under `leg_odom/training/gmm/`). |
 | `--robot-kinematics` | `anymal` or `go2` (must match precompute). |
 | `--feature-fields` | Comma-separated instant field names. |
-| `--history-length` | Default `1` (required for offline GMM mode in EKF). |
-| `--max-sequences` | Optional cap for quick runs. |
+| `--max-sequences` | Optional cap on how many `.npz` bundles merge into the pool (default: all). |
 | `--skip-train-plot` | Skip replay figure after training. |
+
+## Script: dual HMM pooled priors
+
+**Entry point:** `python -m leg_odom.training.dual_hmm.train_dual_hmm`
+
+**Purpose:** Same merge semantics as `train_gmm`: pool GRF columns and **instant** kinematic rows across bundles (optional `--max-sequences`); fit **one** load 2-GMM and **one** kin 2-GMM; save a **dual** `.npz` (`kin_history_length=1`, `trans_stay=0.99` fixed in code) for `contact.dual_hmm.mode: online` fallback. Relative paths resolve under `leg_odom/training/dual_hmm/`.
 
 ## Outputs and EKF wiring
 
 - **NN:** Point `contact.detector: neural` and `contact.neural.checkpoint` (+ scaler/meta paths) in experiment YAML — see [`leg_odom/run/experiment_config.py`](../run/experiment_config.py) and [`leg_odom/run/contact_factory.py`](../run/contact_factory.py).
 - **GMM:** Point `contact.detector: gmm` and pretrained npz / mode (`offline` vs `online`) per project conventions — see ARCHITECTURE / config reference.
+- **Dual HMM:** `contact.detector: dual_hmm` + `contact.dual_hmm` (`offline` whole-sequence fit or `online` + `pretrained_path` from `train_dual_hmm`).
 
 ## Eval CLIs (post-EKF, optional)
 

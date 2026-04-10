@@ -33,16 +33,19 @@ def validate_nn_labels_config(lb: Mapping[str, Any]) -> None:
         mode = str(gm.get("mode", "offline")).lower()
         if mode != "offline":
             raise ValueError(f"labels.gmm_hmm.mode must be offline for precompute labels, got {mode!r}")
-        hl = int(gm.get("history_length", 1))
-        if hl != 1:
-            raise ValueError(
-                f"labels.gmm_hmm.history_length must be 1 (instant GMM emissions), got {hl}"
-            )
         return
     if method == "dual_hmm":
-        raise NotImplementedError(
-            "labels.method dual_hmm is not implemented yet; port leg_odom.contact.dual_hmm_fusion first."
-        )
+        g = lb.get("dual_hmm")
+        if not isinstance(g, Mapping):
+            raise ValueError("labels.dual_hmm must be a mapping when labels.method is dual_hmm")
+        if g.get("pretrained_path"):
+            raise ValueError(
+                "labels.dual_hmm.pretrained_path is not allowed for precompute labels (offline per-sequence fit only)"
+            )
+        mode = str(g.get("mode", "offline")).lower()
+        if mode != "offline":
+            raise ValueError(f"labels.dual_hmm.mode must be offline for precompute labels, got {mode!r}")
+        return
     if method == "ocelot":
         raise NotImplementedError(
             "labels.method ocelot is not implemented yet; port leg_odom.contact.ocelot first."

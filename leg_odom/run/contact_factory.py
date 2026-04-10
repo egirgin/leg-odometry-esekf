@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from leg_odom.contact.base import BaseContactDetector
+from leg_odom.contact.dual_hmm.detector import build_dual_hmm_detectors_from_cfg
 from leg_odom.contact.gmm_hmm.detector import build_gmm_hmm_detectors_from_cfg
 from leg_odom.contact.grf_threshold import build_grf_threshold_detectors_from_cfg
 from leg_odom.datasets.types import LegOdometrySequence
@@ -53,12 +54,26 @@ def build_contact_stack(
     ``kin_model`` is required for ``contact.detector`` ``neural``; ``recording`` is unused.
     Relative ``contact.neural.*`` paths resolve against ``workspace_root`` (repo root when unset:
     :func:`~leg_odom.contact.neural.build_neural_detectors_from_cfg` falls back to ``cwd``).
+
+    ``contact.detector`` ``dual_hmm``: ``kin_model`` always required; ``recording`` required when
+    ``contact.dual_hmm.mode`` is ``offline``. Online mode needs ``contact.dual_hmm.pretrained_path``
+    (see :mod:`leg_odom.training.dual_hmm.train_dual_hmm`).
     """
     det = _contact_detector_id(cfg)
     if det == "grf_threshold":
         return ContactStack(detector_id=det, per_foot=build_grf_threshold_detectors_from_cfg(cfg))
     if det == "gmm":
         return ContactStack(detector_id=det, per_foot=build_gmm_hmm_detectors_from_cfg(cfg, recording=recording, kin_model=kin_model))
+    if det == "dual_hmm":
+        return ContactStack(
+            detector_id=det,
+            per_foot=build_dual_hmm_detectors_from_cfg(
+                cfg,
+                recording=recording,
+                kin_model=kin_model,
+                workspace_root=workspace_root,
+            ),
+        )
     if det == "neural":
         from leg_odom.contact.neural import build_neural_detectors_from_cfg
 

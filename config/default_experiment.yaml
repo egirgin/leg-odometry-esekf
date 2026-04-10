@@ -45,12 +45,15 @@ contact:
       - v_foot_body_y
       - v_foot_body_z
       - p_foot_body_z
-    history_length: 1  # must be 1 when mode is offline
+    history_length: 1  # offline: coerced to N=1 in code; online: window length for pretrained .npz
     trans_stay: 0.99
     fit_interval: 250
     window_size: 500
     degeneracy_max_weight: 0.98
     random_state: 42
+
+  # dual_hmm: detector dual_hmm + contact.dual_hmm { mode, feature_fields, history_length, … }
+  # Viz: python -m leg_odom.contact.dual_hmm.visualize --sequence-dir … --mode offline
 
   neural:
     # Repo-relative path (resolved vs workspace root in experiment_resolved.yaml). Sidecars default next to .pt.

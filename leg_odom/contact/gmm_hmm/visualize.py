@@ -8,6 +8,7 @@ Does not run the EKF. Example::
         --robot-kinematics anymal
 
 Online mode requires ``--pretrained-path`` (same resolution as the detector).
+``--history-length`` applies to **online** only; **offline** always fits and runs with instant ``N=1``.
 """
 
 from __future__ import annotations
@@ -71,13 +72,13 @@ def build_gmm_hmm_detectors_for_replay(
             rec,
             kin,
             feature_fields=fields,
-            history_length=n,
+            history_length=1,
             random_state=random_state,
         )
         return [
             GmmHmmContactDetector(
                 feature_fields=fields,
-                history_length=n,
+                history_length=1,
                 trans_stay=trans_stay,
                 mode="offline",
                 initial_means=m,
