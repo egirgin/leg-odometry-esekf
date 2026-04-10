@@ -198,6 +198,8 @@ class SlidingWindowDatasetCnn(Dataset):
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
         window = self.padded_features[idx : idx + self.window_size]
         label = self.labels[idx]
+        # TODO: Keep CNN windows as (C, L) because nn.Conv1d expects (B, C, L).
+        # Revisit if we later standardize all model inputs to one canonical layout.
         return window.T, label
 
 
@@ -225,4 +227,6 @@ class SlidingWindowDatasetGru(Dataset):
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
         window = self.padded_features[idx : idx + self.window_size]
         label = self.labels[idx]
+        # TODO: Keep GRU windows as (L, C) because nn.GRU(batch_first=True) expects (B, L, C).
+        # Revisit if we later standardize all model inputs to one canonical layout.
         return window, label

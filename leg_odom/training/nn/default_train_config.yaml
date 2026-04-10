@@ -18,11 +18,21 @@ robot:
 
 features:
   fields:
-    - est_tau_calf
+    - p_foot_body_x
+    - p_foot_body_y
+    - p_foot_body_z
     - v_foot_body_x
     - v_foot_body_y
     - v_foot_body_z
-    - p_foot_body_z
+    - est_tau_hip
+    - est_tau_thigh
+    - est_tau_calf
+    - gyro_x
+    - gyro_y
+    - gyro_z
+    - accel_x
+    - accel_y
+    - accel_z
 
 training:
   epochs: 10

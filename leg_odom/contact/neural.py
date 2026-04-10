@@ -209,6 +209,9 @@ class NeuralSharedRuntime:
         assert torch is not None
         x = torch.tensor(rows_f64, dtype=torch.float32, device=self._device).unsqueeze(0)
         if self._arch == "cnn":
+            # TODO: Runtime windows are built as (B, L, C); transpose only for CNN because
+            # ContactCNN/nn.Conv1d uses (B, C, L). Keep parity with training pipeline.
+            # Revisit if we later standardize all model interfaces to one tensor layout.
             x = x.transpose(1, 2)
         with torch.no_grad():
             logit = self._model(x)
