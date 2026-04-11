@@ -24,6 +24,7 @@ flowchart LR
 | Path | Purpose |
 | ---- | ------- |
 | [`nn/`](nn/) | CNN/GRU model training from precomputed bundles |
+| [`ssl_nn/`](ssl_nn/) | Self-supervised CNN/GRU training scaffold (training-only, runtime wiring deferred) |
 | [`gmm/`](gmm/) | GMM contact model fitting from pooled instant features |
 | [`dual_hmm/`](dual_hmm/) | Fused load+kinematic statistical model training |
 
@@ -46,6 +47,17 @@ Outputs typically include:
 - model metadata (`_meta.json`),
 - feature scaler (`_scaler.npz`),
 - optional training plots.
+
+## SSL Neural Training
+
+Entry point:
+
+```bash
+python -m leg_odom.training.ssl_nn.train_ssl_nn --config leg_odom/training/ssl_nn/default_ssl_config.yaml
+```
+
+This module is intentionally training-only at the moment.
+It preserves artifact structure and metadata conventions to ease future detector integration.
 
 ## GMM Training
 

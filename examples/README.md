@@ -22,6 +22,7 @@ For pure GRF-threshold EKF runs, preprocessing and training are optional.
 | [`precompute_tartanground.sh`](precompute_tartanground.sh) | Preprocessing example for Tartanground-style sequences |
 | [`precompute_ocelot.sh`](precompute_ocelot.sh) | Preprocessing example for Ocelot-style sequences |
 | [`train_nn.sh`](train_nn.sh) | Neural detector training from precomputed bundles |
+| [`train_ssl_nn.sh`](train_ssl_nn.sh) | Self-supervised neural backbone training from precomputed bundles |
 | [`train_gmm.sh`](train_gmm.sh) | GMM detector training from precomputed bundles |
 | [`contact_grf_plot.sh`](contact_grf_plot.sh) | Detector-only GRF threshold replay plot |
 | [`contact_gmm_visualize.sh`](contact_gmm_visualize.sh) | Detector-only GMM replay plot |

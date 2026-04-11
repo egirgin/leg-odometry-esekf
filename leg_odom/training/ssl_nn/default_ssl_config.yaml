@@ -1,0 +1,64 @@
+# Self-supervised neural contact pretraining (training-only scaffold).
+# Requires precomputed_instants.npz under dataset.precomputed_root.
+
+dataset:
+  kind: tartanground
+  precomputed_root: ./leg_odom/features/precomputed_tartan_downtown
+
+architecture: gru
+
+output:
+  # If null/blank, defaults to leg_odom/training/ssl_nn/pretrained_{architecture}_ssl
+  dir: leg_odom/training/ssl_nn/pretrained_gru_ssl
+
+robot:
+  kinematics: anymal
+
+features:
+  fields:
+    - p_foot_body_x
+    - p_foot_body_y
+    - p_foot_body_z
+    - v_foot_body_x
+    - v_foot_body_y
+    - v_foot_body_z
+    - est_tau_hip
+    - est_tau_thigh
+    - est_tau_calf
+    - gyro_x
+    - gyro_y
+    - gyro_z
+    - accel_x
+    - accel_y
+    - accel_z
+
+training:
+  epochs: 10
+  batch_size: 32
+  learning_rate: 1.0e-4
+  train_ratio: 0.7
+  val_ratio: 0.15
+  test_ratio: 0.15
+  seed: 42
+  num_workers: 0
+
+model:
+  window_size: 150
+
+ssl:
+  method: contrastive
+  projection_dim: 32
+  temperature: 0.07
+  augmentation:
+    gaussian_noise_std: 0.02
+    feature_dropout_prob: 0.02
+    scale_jitter_std: 0.01
+
+data_loading:
+  verbose: true
+
+visualization:
+  enabled: true
+  num_train_sections: 2
+  num_test_sections: 2
+  dpi: 150
