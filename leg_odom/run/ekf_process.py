@@ -181,6 +181,8 @@ def run_ekf_on_recording(
 
             gyro_corr = gyro - filter_state.bias_gyro
             accel_corr = accel - filter_state.bias_accel
+            v_w = np.asarray(filter_state.v, dtype=np.float64).reshape(3) #required for ocelot
+            r_wb = np.asarray(filter_state.R, dtype=np.float64).reshape(3, 3) #required for ocelot
 
             q_all = row[motor_cols].to_numpy(dtype=np.float64)
             dq_all = row.reindex(vel_cols, fill_value=0.0).to_numpy(dtype=np.float64)
@@ -221,6 +223,8 @@ def run_ekf_on_recording(
                         tau_leg=np.asarray(tau_leg, dtype=np.float64, order="C"),
                         gyro_body_corrected=np.asarray(gyro_corr, dtype=np.float64, order="C"),
                         accel_body_corrected=np.asarray(accel_corr, dtype=np.float64, order="C"),
+                        v_body_world=v_w, #required for ocelot
+                        R_wb=r_wb, # required for ocelot
                     )
                     det = foot_dets[leg_index]
                     est = det.update(step_in)

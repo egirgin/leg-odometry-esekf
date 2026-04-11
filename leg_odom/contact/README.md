@@ -74,7 +74,7 @@ Full-package UML: [docs/CLASS_DIAGRAM.md](../../docs/CLASS_DIAGRAM.md).
 | GMM + HMM | [`gmm_hmm/`](gmm_hmm/) | `gmm` |
 | Neural (CNN/GRU) | [`neural.py`](neural.py) | `neural` |
 | Dual HMM (always GRF + kin fused; optional energy on kin) | [`dual_hmm/`](dual_hmm/) | `dual_hmm` |
-| Ocelot | [`ocelot.py`](ocelot.py) | Stub / future |
+| Ocelot (FSM + isolated 1D GMM + GLRT; not `dataset.kind: ocelot`) | [`ocelot.py`](ocelot.py) | `ocelot` (run via `main.py`; GLRT needs EKF nominal `v` / `R` on `ContactDetectorStepInput`) |
 
 **Neural** weights come from [`leg_odom.training.nn.train_contact_nn`](../training/nn/train_contact_nn.py); **GMM** npz from [`leg_odom.training.gmm.train_gmm`](../training/gmm/train_gmm.py); **dual HMM** pooled fallback npz from [`leg_odom.training.dual_hmm.train_dual_hmm`](../training/dual_hmm/train_dual_hmm.py). Shared GMM ordering + pretrained I/O: [`gmm_hmm_core/`](gmm_hmm_core/). **GRF threshold** uses only merged logs (no precompute).
 

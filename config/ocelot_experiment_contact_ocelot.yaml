@@ -1,0 +1,50 @@
+# Ocelot lowstate recording + Ocelot *contact detector* (FSM + isolated GMM + GLRT).
+# (dataset.kind: ocelot is the data layout; contact.detector: ocelot is the stance method — unrelated names.)
+# Run with:
+#   conda run -n leg-odometry python main.py --config config/ocelot_experiment_contact_ocelot.yaml
+#
+# Baseline: config/ocelot_experiment.yaml (same robot, dataset, EKF noise path).
+
+schema_version: 1
+
+run:
+  name: ocelot_contact_detector_dev
+  debug:
+    enabled: true
+    live_visualizer:
+      enabled: true
+      sliding_window_s: 10.0
+      buffer_length: 5000
+      video_path: null
+      hz: 10
+
+robot:
+  kinematics: go2
+
+dataset:
+  kind: ocelot
+  sequence_dir: /home/girgine/Documents/leg-odometry/iros/data/14_43_46
+
+contact:
+  detector: ocelot
+  ocelot:
+    use_fsm: true
+    use_glrt: true
+    # offline: fit 1D GMM on full-sequence forces before EKF; force_max = per-leg max over timeline.
+    # online: sliding force window + periodic GMM refit; force_max = max over last window_size samples.
+    fsm_gmm_mode: online
+    force_on: 30.0
+    force_off: 20.0
+    window_size: 5000
+    fit_interval: 2500
+    noise_std_dev: 1
+    rate_hz: 500
+    random_state: 42
+
+ekf:
+  noise_config: config/ekf_noise/default.yaml
+  initialize_nominal_from_data: false
+
+output:
+  base_dir: output_ocelot
+  include_timestamp: true

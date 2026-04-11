@@ -15,6 +15,7 @@ from leg_odom.contact.base import BaseContactDetector
 from leg_odom.contact.dual_hmm.detector import build_dual_hmm_detectors_from_cfg
 from leg_odom.contact.gmm_hmm.detector import build_gmm_hmm_detectors_from_cfg
 from leg_odom.contact.grf_threshold import build_grf_threshold_detectors_from_cfg
+from leg_odom.contact.ocelot import build_ocelot_detectors_from_cfg
 from leg_odom.datasets.types import LegOdometrySequence
 from leg_odom.kinematics.base import BaseKinematics
 
@@ -58,6 +59,9 @@ def build_contact_stack(
     ``contact.detector`` ``dual_hmm``: ``kin_model`` always required; ``recording`` required when
     ``contact.dual_hmm.mode`` is ``offline``. Online mode needs ``contact.dual_hmm.pretrained_path``
     (see :mod:`leg_odom.training.dual_hmm.train_dual_hmm`).
+
+    ``contact.detector`` ``ocelot``: ``recording`` required; ``kin_model`` unused. See
+    :mod:`leg_odom.contact.ocelot`.
     """
     det = _contact_detector_id(cfg)
     if det == "grf_threshold":
@@ -82,5 +86,10 @@ def build_contact_stack(
         return ContactStack(
             detector_id=det,
             per_foot=build_neural_detectors_from_cfg(cfg, kin_model=kin_model, workspace_root=workspace_root),
+        )
+    if det == "ocelot":
+        return ContactStack(
+            detector_id=det,
+            per_foot=build_ocelot_detectors_from_cfg(cfg, recording=recording, kin_model=kin_model),
         )
     return ContactStack(detector_id=det, per_foot=None)

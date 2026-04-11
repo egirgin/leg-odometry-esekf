@@ -50,6 +50,10 @@ class ContactDetectorStepInput:
 
     - :class:`~leg_odom.contact.grf_threshold.GrfThresholdContactDetector`: ``grf_n`` only
       (other fields reserved for richer detectors).
+    - :class:`~leg_odom.contact.ocelot.OcelotContactDetector` (GLRT): ``v_body_world`` and
+      ``R_wb`` — nominal body velocity in **world** frame and **body-to-world** rotation (same
+      convention as :class:`~leg_odom.filters.esekf.ErrorStateEkf`), filled by the EKF loop after
+      ``imu_predict``. Omitted or ``None`` when not running inside the EKF.
     """
 
     grf_n: float
@@ -60,6 +64,8 @@ class ContactDetectorStepInput:
     tau_leg: npt.NDArray[np.float64]
     gyro_body_corrected: npt.NDArray[np.float64]
     accel_body_corrected: npt.NDArray[np.float64]
+    v_body_world: npt.NDArray[np.float64] | None = None #required for ocelot
+    R_wb: npt.NDArray[np.float64] | None = None #required for ocelot
 
 
 class ContactEstimate(NamedTuple):

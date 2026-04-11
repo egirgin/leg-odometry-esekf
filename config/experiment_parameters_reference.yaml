@@ -96,6 +96,24 @@ contact:
     stance_probability_threshold: 0.5
     # cpu | cuda | mps | null (auto)
     device: null
+  # Legacy-style FSM + isolated 1D sklearn GMM on force + GLRT on foot velocity (EKF loop only).
+  # Not related to dataset.kind: ocelot. No shared gmm_hmm_core.
+  ocelot:
+    use_fsm: true
+    use_glrt: true
+    # GLRT window length is fixed in code: 0.01 s × rate_hz samples (legacy wlen_s).
+    # offline: GMM on full-sequence forces before EKF; force_max = per-leg max over full timeline.
+    # online: GMM refit on sliding window; force_max = max over last window_size samples.
+    fsm_gmm_mode: offline
+    # Same N for every leg (scalar).
+    force_on: 25.0
+    force_off: 15.0
+    window_size: 500
+    fit_interval: 250
+    noise_std_dev: 0.45
+    # null = recording median_rate_hz
+    rate_hz: null
+    random_state: 42
 
 ekf:
   # Path to YAML with imu_noise + P0_diagonal (see config/ekf_noise/default.yaml). Null = code defaults only.

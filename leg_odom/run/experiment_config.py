@@ -70,7 +70,21 @@ def default_experiment_dict() -> dict[str, Any]:
             # Placeholder absolute path for programmatic merge-only configs; YAML must set explicitly.
             "sequence_dir": str(Path.home() / "data_anymal"),
         },
-        "contact": {"detector": "none"},
+        "contact": {
+            "detector": "none",
+            "ocelot": {
+                "use_fsm": True,
+                "use_glrt": True,
+                "fsm_gmm_mode": "offline",
+                "force_on": 25.0,
+                "force_off": 15.0,
+                "window_size": 500,
+                "fit_interval": 250,
+                "noise_std_dev": 0.45,
+                "rate_hz": None,
+                "random_state": 42,
+            },
+        },
         "ekf": {"noise_config": None, "initialize_nominal_from_data": False},
         "output": {
             "base_dir": "output_leg_odom",
@@ -188,6 +202,8 @@ def validate_experiment_dict(
         )
     if det == "neural":
         _validate_contact_neural_block(cfg)
+    if det == "ocelot":
+        _validate_contact_ocelot_block(cfg)
 
     # EKF sidecar (optional path string)
     ekf = cfg.get("ekf")
@@ -272,6 +288,61 @@ def _neural_checkpoint_sidecar_paths(checkpoint: Path) -> tuple[Path, Path]:
     parent = checkpoint.parent
     stem = checkpoint.stem
     return parent / f"{stem}_meta.json", parent / f"{stem}_scaler.npz"
+
+
+def _validate_contact_ocelot_block(cfg: Mapping[str, Any]) -> None:
+    c = cfg.get("contact")
+    if not isinstance(c, Mapping):
+        return
+    oc = c.get("ocelot")
+    if not isinstance(oc, Mapping):
+        raise ValueError("contact.detector is ocelot but contact.ocelot must be a mapping")
+    ufs = oc.get("use_fsm", True)
+    ugl = oc.get("use_glrt", True)
+    if not isinstance(ufs, bool) or not isinstance(ugl, bool):
+        raise TypeError("contact.ocelot.use_fsm and use_glrt must be booleans")
+    if not ufs and not ugl:
+        raise ValueError("contact.ocelot: at least one of use_fsm or use_glrt must be true")
+    mode = str(oc.get("fsm_gmm_mode", "offline")).lower().strip()
+    if mode not in ("offline", "online"):
+        raise ValueError("contact.ocelot.fsm_gmm_mode must be offline or online")
+    for key in ("force_on", "force_off"):
+        if key not in oc:
+            continue
+        v = oc[key]
+        if isinstance(v, (list, tuple)):
+            raise TypeError(
+                f"contact.ocelot.{key} must be a single number (same threshold for all legs), not a list"
+            )
+        if isinstance(v, bool) or not isinstance(v, (int, float)):
+            raise TypeError(f"contact.ocelot.{key} must be a number")
+        if not math.isfinite(float(v)):
+            raise ValueError(f"contact.ocelot.{key} must be finite")
+    if mode == "online":
+        ws = oc.get("window_size", 500)
+        fi = oc.get("fit_interval", 250)
+        if isinstance(ws, bool) or not isinstance(ws, (int, float)):
+            raise TypeError("contact.ocelot.window_size must be a number")
+        if isinstance(fi, bool) or not isinstance(fi, (int, float)):
+            raise TypeError("contact.ocelot.fit_interval must be a number")
+        if int(ws) < 1:
+            raise ValueError("contact.ocelot.window_size must be >= 1 when fsm_gmm_mode is online")
+        if int(fi) < 1:
+            raise ValueError("contact.ocelot.fit_interval must be >= 1 when fsm_gmm_mode is online")
+    if "noise_std_dev" in oc:
+        ns = oc["noise_std_dev"]
+        if isinstance(ns, bool):
+            raise TypeError("contact.ocelot.noise_std_dev must be a number")
+        nf = float(ns)
+        if not math.isfinite(nf) or nf <= 0:
+            raise ValueError("contact.ocelot.noise_std_dev must be a finite positive number")
+    rh = oc.get("rate_hz", None)
+    if rh is not None and rh != "":
+        if isinstance(rh, bool):
+            raise TypeError("contact.ocelot.rate_hz must be a number or null")
+        rf = float(rh)
+        if not math.isfinite(rf) or rf <= 0:
+            raise ValueError("contact.ocelot.rate_hz must be null or a finite positive number")
 
 
 def _validate_contact_neural_block(cfg: Mapping[str, Any]) -> None:
