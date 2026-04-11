@@ -1,124 +1,75 @@
-# Contact detection
+# Contact Detector Guide
 
-**Contact inference** estimates stance probability (and ZUPT measurement noise) per foot for the EKF. Implementations subclass **`BaseContactDetector`** and consume **`ContactDetectorStepInput`** per timestep (kinematics + IMU + GRF, etc.).
+This module contains contact detectors and standalone replay utilities.
 
-The EKF builds detectors via [`leg_odom/run/contact_factory.py`](../run/contact_factory.py) from experiment YAML. The **same** detector classes and **replay** utilities are used by training label pipelines and optional visualization CLIs **without** running the full EKF loop.
+Use these tools when you want to inspect detector behavior without running the EKF loop.
 
-## UML class diagrams (Mermaid)
-
-**Types and detector hierarchy**
+## Detector-Only Flow
 
 ```mermaid
-classDiagram
-    direction TB
-    class ContactEstimate {
-        <<NamedTuple>>
-        +stance bool
-        +p_stance float
-        +zupt_meas_var float
-    }
-    class ContactDetectorStepInput {
-        <<dataclass>>
-        +grf_n float
-        +p_foot_body ndarray
-        +v_foot_body ndarray
-        +q_leg dq_leg tau_leg ndarray
-        +gyro_body_corrected ndarray
-        +accel_body_corrected ndarray
-    }
-    class BaseContactDetector {
-        <<abstract>>
-        +feature_dim int
-        +history_length int
-        +update(step) ContactEstimate
-        +reset()
-        +last_zupt_R_foot ndarray
-    }
-    class GrfThresholdContactDetector
-    class GmmHmmContactDetector
-    class NeuralContactDetector
-    class NeuralSharedRuntime {
-        +spec InstantFeatureSpec
-        +forward_window(rows) float
-    }
-    class TwoStateGaussianHMM {
-        +filter_step(log_emiss)
-    }
-    BaseContactDetector <|-- GrfThresholdContactDetector
-    BaseContactDetector <|-- GmmHmmContactDetector
-    BaseContactDetector <|-- NeuralContactDetector
-    BaseContactDetector ..> ContactDetectorStepInput : update consumes
-    BaseContactDetector ..> ContactEstimate : update returns
-    NeuralContactDetector o-- NeuralSharedRuntime : shared per robot run
-    GmmHmmContactDetector ..> TwoStateGaussianHMM : offline/online filter
+flowchart LR
+    A[Sequence CSV Data] --> B[Dataset Loader]
+    B --> C[Timeline + Kinematics]
+    C --> D[Detector Replay]
+    D --> E[Stance Probability and Labels]
+    E --> F[Plots and Diagnostics]
 ```
 
-**Replay helpers** — [`replay_timeline.replay_detectors_on_timeline`](replay_timeline.py) runs a list of `BaseContactDetector` instances over a merged timeline (no class diagram: functions + `pandas.DataFrame`).
+## Available Detector Families
 
-Full-package UML: [docs/CLASS_DIAGRAM.md](../../docs/CLASS_DIAGRAM.md).
+| Detector | Typical Runtime Key |
+| -------- | ------------------- |
+| GRF threshold | `grf_threshold` |
+| GMM + HMM | `gmm` |
+| Neural detector | `neural` |
+| Dual HMM | `dual_hmm` |
+| Ocelot detector | `ocelot` |
 
-## Core API
+## Run Without EKF
 
-| Module | Role |
-| ------ | ---- |
-| [`base.py`](base.py) | `BaseContactDetector`, `ContactDetectorStepInput`, `ContactEstimate`, ZUPT helper. |
-| [`replay_timeline.py`](replay_timeline.py) | Run a list of detectors over a merged `DataFrame` + kinematics (used by EKF tooling, training labels, CLIs). |
-| [`grf_stance_plot.py`](grf_stance_plot.py) | Matplotlib GRF / stance overview (optional per-leg energy row); shared by CLIs and `train_gmm` / `train_dual_hmm` plots. |
-| [`gmm_hmm_core/`](gmm_hmm_core/) | Shared `TwoStateGaussianHMM`, `fit_gmm_ordered`, offline per-leg fits, single + dual pretrained `.npz` I/O. |
-
-## Concrete detectors
-
-| Detector | Module / package | Typical YAML `contact.detector` |
-| -------- | ---------------- | ------------------------------- |
-| GRF threshold | [`grf_threshold.py`](grf_threshold.py) | `grf_threshold` |
-| GMM + HMM | [`gmm_hmm/`](gmm_hmm/) | `gmm` |
-| Neural (CNN/GRU) | [`neural.py`](neural.py) | `neural` |
-| Dual HMM (always GRF + kin fused; optional energy on kin) | [`dual_hmm/`](dual_hmm/) | `dual_hmm` |
-| Ocelot (FSM + isolated 1D GMM + GLRT; not `dataset.kind: ocelot`) | [`ocelot.py`](ocelot.py) | `ocelot` (run via `main.py`; GLRT needs EKF nominal `v` / `R` on `ContactDetectorStepInput`) |
-
-**Neural** weights come from [`leg_odom.training.nn.train_contact_nn`](../training/nn/train_contact_nn.py); **GMM** npz from [`leg_odom.training.gmm.train_gmm`](../training/gmm/train_gmm.py); **dual HMM** pooled fallback npz from [`leg_odom.training.dual_hmm.train_dual_hmm`](../training/dual_hmm/train_dual_hmm.py). Shared GMM ordering + pretrained I/O: [`gmm_hmm_core/`](gmm_hmm_core/). **GRF threshold** uses only merged logs (no precompute).
-
-## Standalone scripts (no EKF `main.py`)
-
-These load **one sequence** via `build_leg_odometry_dataset`, build kinematics, run **replay**, and plot:
-
-### GRF threshold visualization
+### GRF threshold replay
 
 ```bash
 python -m leg_odom.contact.grf_threshold --help
 ```
 
-Notable args: `--sequence-dir`, `--dataset-kind` (`tartanground` or `ocelot`), `--robot-kinematics`, `--force-threshold`, `--save` (PNG path; empty = interactive).
-
-### GMM + HMM visualization
+### GMM replay visualization
 
 ```bash
 python -m leg_odom.contact.gmm_hmm.visualize --help
 ```
 
-Notable args: `--sequence-dir`, `--dataset-kind`, `--robot-kinematics`, `--mode` (`offline` / `online`), `--pretrained-path` (required for `online`), `--feature-fields`, `--history-length` (online only; offline is always `N=1`), `--save`.
-
-**Offline** mode fits from the loaded recording; **online** loads a pretrained `.npz` from training.
-
-### Dual HMM visualization
+### Dual HMM replay visualization
 
 ```bash
 python -m leg_odom.contact.dual_hmm.visualize --help
 ```
 
-Same pattern as GMM+HMM: `--mode offline|online`, kin `--feature-fields` (no `grf_n`), `--history-length` (used in **online** only; **offline** forces `N=1`), `--use-energy` adds a second row per leg (normalized energy), `--pretrained-path` for online (from `train_dual_hmm`). Dual **always** fuses load + kin; for GRF-only or kin-only contact use `contact.detector: gmm`.
+These scripts allow detector inspection on a sequence timeline and generate diagnostic plots.
 
-## Relationship to the EKF
+## Typical Inputs
 
-1. **Experiment YAML** selects `contact.detector` and nested options.
-2. [`contact_factory`](../run/contact_factory.py) instantiates per-leg detectors.
-3. [`leg_odom/run/ekf_process.py`](../run/ekf_process.py) calls `update(step)` each IMU step and applies ZUPT when stance is asserted.
+Standalone detector scripts usually require:
+- sequence path,
+- dataset kind (`tartanground` or `ocelot`),
+- robot kinematics backend,
+- detector-specific options (for example pretrained path or mode).
 
-Running the CLIs above **does not** produce `ekf_history_*.csv`; they only validate detector behavior on raw data.
+## Typical Outputs
 
-## Related documentation
+Detector-only runs produce plot artifacts and contact diagnostics.
+They do not run the EKF process loop and do not produce EKF history CSV.
 
-- [Training README](../training/README.md) — producing GMM/NN weights.
-- [Repository README](../../README.md) — full EKF run and outputs.
-- [ARCHITECTURE.md](../../ARCHITECTURE.md) — factory keys and detector modes table.
-- [CLASS_DIAGRAM.md](../../docs/CLASS_DIAGRAM.md) — datasets, kinematics, factories, pipeline flow.
+## Relationship to Training
+
+`gmm`, `dual_hmm`, and `neural` workflows often use artifacts produced by training scripts.
+
+See:
+- [`../training/README.md`](../training/README.md)
+
+## Relationship to Full EKF
+
+For full trajectory estimation with contact fusion in the filter loop, use:
+- [`../../README.md`](../../README.md)
+
+The main EKF flow is executed via [`../../main.py`](../../main.py) with experiment YAML.

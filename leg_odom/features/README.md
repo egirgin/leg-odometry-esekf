@@ -1,105 +1,94 @@
-# Features: instant specification and precompute
+# Preprocessing (Features) Guide
 
-This package defines the **per-timestep feature vector** used by **GMM+HMM**, **neural contact training**, and the **EKF contact stack** (same field names, compatible layouts). It also hosts the **offline precompute** CLI that writes NumPy bundles for training.
+This module provides the preprocessing stage used before model training.
 
-## Modules (no CLI)
+Preprocessing builds per-sequence feature bundles from dataset CSV timelines so training jobs can run on standardized inputs.
 
-| Module | Role |
-| ------ | ---- |
-| [`instant_spec.py`](instant_spec.py) | Canonical field names, `parse_instant_feature_fields`, `build_timeline_features_for_leg`, helpers shared with `leg_odom.contact.gmm_hmm`. |
-| [`discovery.py`](discovery.py) | Discover sequence directories under processed CSV roots (Tartanground / Ocelot). |
-| [`sequence_frames.py`](sequence_frames.py) | Load merged `DataFrame` timelines per layout. |
-| [`nn_sequence_io.py`](nn_sequence_io.py) | `discover_sequence_dirs`, `load_training_frames` by `dataset.kind`. |
-| [`nn_labels_config.py`](nn_labels_config.py) | Validate `labels` block for precompute YAML. |
-| [`precompute_config.py`](precompute_config.py) | Load/validate precompute YAML. |
-| [`contact_label_timelines.py`](contact_label_timelines.py) | Contact detector replay → per-leg stance (used by precompute). |
-| [`__init__.py`](__init__.py) | Re-exports the public names from `instant_spec` for convenience. |
+## Goal
 
-**Consumers:** `leg_odom.contact` (GMM+HMM, neural runtime), `leg_odom.training` (NN/GMM training), `leg_odom.features.precompute_contact_instants`.
+Preprocessing exists to:
+- compute instant feature vectors per leg,
+- generate reproducible `.npz` bundles for training,
+- keep Tartanground and Ocelot training inputs aligned to one schema.
 
-## Script: precompute for training
-
-**Entry point:** `python -m leg_odom.features.precompute_contact_instants --config <path.yaml>`
-
-**Purpose:** Walk a tree of raw sequences, load merged timelines per `dataset_kind`, compute full offline instants + foot forces + **stance** (GRF threshold or offline GMM+HMM replay), and write one **`precomputed_instants.npz`** per sequence under `output_root` (mirrored relative paths). Writes **`precompute_manifest.json`** under the output root.
-
-**Requires:** A conda env with project deps. **Does not** import the EKF filter loop.
-
-### Config (YAML)
-
-Copy and edit [`default_precompute_config.yaml`](default_precompute_config.yaml). Required keys:
-
-| Key | Description |
-| --- | ----------- |
-| `dataset_root` | Processed CSV tree (recursive discovery). |
-| `output_root` | Root for mirrored `.npz` tree + manifest (same as training `dataset.precomputed_root`). |
-| `dataset_kind` | `tartanground` or `ocelot`. |
-| `robot` | `anymal` or `go2` (kinematics for features + stance replay). |
-| `labels` | Nested block: `method` + `grf_threshold` or `gmm_hmm` (same structure as historical NN train YAML). |
-| `overwrite` | Bool — replace existing npz. |
-| `verbose` | Optional bool (default `true`) — tqdm + discovery skips. |
-| `max_sequences` | Optional — process only first N after discovery (1–240). |
-
-Frames are **always** validated when loading. There is no `--no-validate`.
-
-### Layout discovery
-
-- **`tartanground`:** each sequence dir has `imu.csv` and exactly one `*_bag.csv`.
-- **`ocelot`:** each sequence dir has `lowstate.csv`.
-
-Same rules as [`leg_odom.features.discovery`](discovery.py).
-
-### Outputs
-
-- **`precomputed_instants.npz`** per sequence: `instants_leg*`, `foot_forces`, `stance_leg*`, `contact_label_method`, `contact_labels_config_json`, `sequence_dir`, `robot_kinematics`, format/spec version fields (see [`leg_odom.training.nn.precomputed_io`](../training/nn/precomputed_io.py)).
-- **`precompute_manifest.json`**: `config_path`, resolved config snapshot, counts, per-sequence npz paths and UIDs.
-
-## UML class diagrams (Mermaid)
-
-**Spec and shared input contract** — instant field names match [`ContactDetectorStepInput`](../contact/base.py) scalars (and joint slices) used across precompute, training, and EKF.
+## Preprocessing Flow
 
 ```mermaid
-classDiagram
-    direction TB
-    class InstantFeatureSpec {
-        <<dataclass>>
-        +fields tuple[str, ...]
-        +stance_height_instant_index int|None
-        +use_higher_grf_mean_for_stance bool
-        +instant_dim int
-        +ordering_component_index() int
-    }
-    class ContactDetectorStepInput {
-        <<dataclass>>
-        +grf_n float
-        +p_foot_body ndarray
-        +v_foot_body ndarray
-        +q_leg dq_leg tau_leg ndarray
-        +gyro_body_corrected ndarray
-        +accel_body_corrected ndarray
-    }
-    class BaseKinematics {
-        <<abstract>>
-        +fk(leg_id, q)
-        +J_analytical(leg_id, q)
-    }
-    InstantFeatureSpec ..> ContactDetectorStepInput : field names align
-    InstantFeatureSpec ..> BaseKinematics : FK / Jacobians for offline vectors
+flowchart LR
+    A[dataset_root] --> B[Sequence Discovery]
+    B --> C[Timeline Load and Validation]
+    C --> D[Instant Feature Extraction]
+    D --> E[Optional Label Replay]
+    E --> F[precomputed_instants.npz per sequence]
+    F --> G[precompute_manifest.json]
 ```
 
-**Offline CLI** — `precompute_contact_instants` loads YAML via [`precompute_config.py`](precompute_config.py); bundles are consumed by [`precomputed_io`](../training/nn/precomputed_io.py). Full-package UML: [docs/CLASS_DIAGRAM.md](../../docs/CLASS_DIAGRAM.md).
+## Entry Point
 
-## Downstream dependencies
+```bash
+python -m leg_odom.features.precompute_contact_instants --config <precompute_config.yaml>
+```
 
-| Step | Needs precompute? |
-| ---- | ----------------- |
-| **NN contact training** (`train_contact_nn`) | **Yes** — training reads only npz under `dataset.precomputed_root`. |
-| **GMM fit** (`train_gmm`) | **Yes** — same npz discovery (stance arrays are ignored). |
-| **EKF with `contact.detector: neural` or `gmm` (online)** | Indirect — needs weights produced **after** training/fit (not the npz at EKF runtime unless you use offline GMM inside the detector). |
-| **EKF with `grf_threshold`** | **No** — raw logs only. |
+## Example Configs
 
-## Related documentation
+Start from:
+- [`default_precompute_config.yaml`](default_precompute_config.yaml)
 
-- [Training README](../training/README.md) — how npz is consumed.
-- [Repository README](../../README.md) — full pipeline overview.
-- [CLASS_DIAGRAM.md](../../docs/CLASS_DIAGRAM.md) — package-wide classes and factories.
+This config demonstrates:
+- dataset selection (`dataset_kind: tartanground|ocelot`),
+- robot kinematics selection (`robot: anymal|go2`),
+- output root for generated bundles,
+- label generation strategy (`labels.method`).
+
+## Important Config Fields
+
+| Field | Description |
+| ----- | ----------- |
+| `dataset_root` | Root directory to scan for sequence folders |
+| `output_root` | Destination root for generated `.npz` bundles |
+| `dataset_kind` | `tartanground` or `ocelot` |
+| `robot` | `anymal` or `go2` |
+| `labels.method` | Label source used during preprocessing |
+| `overwrite` | Replace existing outputs when true |
+| `max_sequences` | Optional cap for quick runs |
+
+## Usage Examples
+
+### Example A: Tartanground preprocessing
+
+```bash
+python -m leg_odom.features.precompute_contact_instants \
+  --config leg_odom/features/default_precompute_config.yaml
+```
+
+### Example B: Ocelot preprocessing
+
+Create a config copy and set:
+- `dataset_kind: ocelot`
+- `robot: go2`
+
+Then run:
+
+```bash
+python -m leg_odom.features.precompute_contact_instants \
+  --config path/to/precompute_ocelot.yaml
+```
+
+## Output Artifacts
+
+Preprocessing writes:
+- `precomputed_instants.npz` per discovered sequence,
+- `precompute_manifest.json` in `output_root`.
+
+These outputs are consumed by training under [`leg_odom/training/`](../training/).
+
+## How This Connects to Training
+
+Training jobs read the generated precompute tree (`dataset.precomputed_root`).
+
+If training is planned, run preprocessing first.
+
+## Related Docs
+
+- [`../../README.md`](../../README.md)
+- [`../training/README.md`](../training/README.md)

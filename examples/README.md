@@ -1,21 +1,35 @@
-# Example commands
+# Leg Odometry Framework Examples
 
-Shell snippets for **conda env `leg-odometry`** and repo root **`async_ekf_workspace`**. Edit paths before running.
+This folder contains shell examples for common workflows.
 
-Order when using learned contact models:
+Assumptions:
+- conda env: `leg-odometry`
+- working directory: repository root
 
-1. **Precompute** → 2. **Train** (NN and/or GMM) → 3. **Point experiment YAML** at weights → 4. **`main.py`**.
+## Recommended Order
 
-For **GRF-threshold** contact only, skip steps 1–2.
+1. Preprocess (if training is needed)
+2. Train detector models
+3. Run detector-only visualization (optional)
+4. Run full EKF experiment
+
+For pure GRF-threshold EKF runs, preprocessing and training are optional.
+
+## Scripts
 
 | Script | Purpose |
 | ------ | ------- |
-| [`precompute_tartanground.sh`](precompute_tartanground.sh) | Build npz tree for imu+bag layouts (`PRECOMPUTE_CONFIG` → YAML, default `leg_odom/features/default_precompute_config.yaml`) |
-| [`precompute_ocelot.sh`](precompute_ocelot.sh) | Build npz tree for Ocelot `lowstate.csv` (same; set `dataset_kind: ocelot` in YAML) |
-| [`train_nn.sh`](train_nn.sh) | CNN/GRU training from npz |
-| [`train_gmm.sh`](train_gmm.sh) | GMM fit from npz |
-| [`contact_grf_plot.sh`](contact_grf_plot.sh) | GRF-threshold replay plot (no EKF) |
-| [`contact_gmm_visualize.sh`](contact_gmm_visualize.sh) | GMM+HMM replay plot (no EKF) |
-| [`run_ekf.sh`](run_ekf.sh) | Full experiment via `main.py` |
+| [`precompute_tartanground.sh`](precompute_tartanground.sh) | Preprocessing example for Tartanground-style sequences |
+| [`precompute_ocelot.sh`](precompute_ocelot.sh) | Preprocessing example for Ocelot-style sequences |
+| [`train_nn.sh`](train_nn.sh) | Neural detector training from precomputed bundles |
+| [`train_gmm.sh`](train_gmm.sh) | GMM detector training from precomputed bundles |
+| [`contact_grf_plot.sh`](contact_grf_plot.sh) | Detector-only GRF threshold replay plot |
+| [`contact_gmm_visualize.sh`](contact_gmm_visualize.sh) | Detector-only GMM replay plot |
+| [`run_ekf.sh`](run_ekf.sh) | Run full EKF pipeline using experiment YAML |
 
-More detail: [Features README](../leg_odom/features/README.md), [Training README](../leg_odom/training/README.md), [Contact README](../leg_odom/contact/README.md), [root README](../README.md).
+## Documentation Links
+
+- [`../README.md`](../README.md)
+- [`../leg_odom/features/README.md`](../leg_odom/features/README.md)
+- [`../leg_odom/training/README.md`](../leg_odom/training/README.md)
+- [`../leg_odom/contact/README.md`](../leg_odom/contact/README.md)
