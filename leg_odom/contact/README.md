@@ -64,7 +64,7 @@ Full-package UML: [docs/CLASS_DIAGRAM.md](../../docs/CLASS_DIAGRAM.md).
 | [`base.py`](base.py) | `BaseContactDetector`, `ContactDetectorStepInput`, `ContactEstimate`, ZUPT helper. |
 | [`replay_timeline.py`](replay_timeline.py) | Run a list of detectors over a merged `DataFrame` + kinematics (used by EKF tooling, training labels, CLIs). |
 | [`grf_stance_plot.py`](grf_stance_plot.py) | Matplotlib GRF / stance overview (optional per-leg energy row); shared by CLIs and `train_gmm` / `train_dual_hmm` plots. |
-| [`gmm_hmm_core/`](gmm_hmm_core/) | Shared `TwoStateGaussianHMM`, `fit_gmm_ordered`, offline per-leg fits, single + dual pretrained `.npz` I/O, `zupt_R_foot_from_p_stance`. |
+| [`gmm_hmm_core/`](gmm_hmm_core/) | Shared `TwoStateGaussianHMM`, `fit_gmm_ordered`, offline per-leg fits, single + dual pretrained `.npz` I/O. |
 
 ## Concrete detectors
 
@@ -73,7 +73,7 @@ Full-package UML: [docs/CLASS_DIAGRAM.md](../../docs/CLASS_DIAGRAM.md).
 | GRF threshold | [`grf_threshold.py`](grf_threshold.py) | `grf_threshold` |
 | GMM + HMM | [`gmm_hmm/`](gmm_hmm/) | `gmm` |
 | Neural (CNN/GRU) | [`neural.py`](neural.py) | `neural` |
-| Dual HMM (always GRF + kin fused; optional energy on kin) | [`dual_hmm/`](dual_hmm/), re-export [`dual_hmm_fusion.py`](dual_hmm_fusion.py) | `dual_hmm` |
+| Dual HMM (always GRF + kin fused; optional energy on kin) | [`dual_hmm/`](dual_hmm/) | `dual_hmm` |
 | Ocelot | [`ocelot.py`](ocelot.py) | Stub / future |
 
 **Neural** weights come from [`leg_odom.training.nn.train_contact_nn`](../training/nn/train_contact_nn.py); **GMM** npz from [`leg_odom.training.gmm.train_gmm`](../training/gmm/train_gmm.py); **dual HMM** pooled fallback npz from [`leg_odom.training.dual_hmm.train_dual_hmm`](../training/dual_hmm/train_dual_hmm.py). Shared GMM ordering + pretrained I/O: [`gmm_hmm_core/`](gmm_hmm_core/). **GRF threshold** uses only merged logs (no precompute).

@@ -18,7 +18,7 @@ from pathlib import Path
 
 from leg_odom.contact.grf_stance_plot import plot_grf_contact_overview
 from leg_odom.contact.gmm_hmm.detector import GmmHmmContactDetector
-from leg_odom.contact.gmm_hmm.fitting import fit_offline_per_leg
+from leg_odom.contact.gmm_hmm_core.fitting import fit_offline_per_leg
 from leg_odom.features import DEFAULT_INSTANT_FEATURE_FIELDS, parse_instant_feature_fields
 from leg_odom.contact.replay_timeline import replay_detectors_on_timeline
 from leg_odom.run.dataset_factory import build_leg_odometry_dataset

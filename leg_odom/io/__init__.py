@@ -1,4 +1,4 @@
-"""CSV / split-directory IO (robot-agnostic helpers + ANYmal split alias)."""
+"""CSV / split-directory IO (robot-agnostic helpers)."""
 
 from leg_odom.io.ground_truth import extract_position_ground_truth
 from leg_odom.io.imu_sanitize import infer_accel_gravity_compensated, sanitize_imu_dataframe

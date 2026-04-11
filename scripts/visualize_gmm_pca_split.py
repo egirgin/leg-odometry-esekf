@@ -36,7 +36,7 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from leg_odom.contact.gmm_hmm.fitting import order_gmm_components
+from leg_odom.contact.gmm_hmm_core.fitting import order_gmm_components
 from leg_odom.datasets.types import LegOdometrySequence
 from leg_odom.features import (
     DEFAULT_INSTANT_FEATURE_FIELDS,
@@ -85,7 +85,7 @@ def _fit_ordered_gmm(
     *,
     random_state: int,
 ) -> tuple[GaussianMixture, np.ndarray, np.ndarray, bool]:
-    """Match leg_odom.contact.gmm_hmm.fitting.fit_gmm_ordered; also return sklearn model."""
+    """Match leg_odom.contact.gmm_hmm_core.fitting.fit_gmm_ordered; also return sklearn model."""
     X = np.asarray(X, dtype=np.float64)
     if X.ndim != 2 or X.shape[0] < 4:
         d = int(X.shape[1]) if X.ndim == 2 else 0

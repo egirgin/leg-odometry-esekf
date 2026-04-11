@@ -6,7 +6,7 @@ Instant feature layout is defined in :mod:`leg_odom.features`.
 """
 
 from leg_odom.contact.gmm_hmm.detector import GmmHmmContactDetector, build_gmm_hmm_detectors_from_cfg
-from leg_odom.contact.gmm_hmm.fitting import (
+from leg_odom.contact.gmm_hmm_core.fitting import (
     fit_gmm_ordered,
     fit_offline_dual_per_leg,
     fit_offline_load_grf_per_leg,
@@ -15,7 +15,7 @@ from leg_odom.contact.gmm_hmm.fitting import (
     load_pretrained_gmm_npz,
     save_pretrained_dual_hmm_npz,
 )
-from leg_odom.contact.gmm_hmm.hmm_gaussian import TwoStateGaussianHMM
+from leg_odom.contact.gmm_hmm_core.hmm_gaussian import TwoStateGaussianHMM
 from leg_odom.features import (
     ALLOWED_INSTANT_FEATURE_FIELDS,
     DEFAULT_INSTANT_FEATURE_FIELDS,

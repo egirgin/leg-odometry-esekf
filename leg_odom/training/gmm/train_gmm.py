@@ -67,7 +67,7 @@ def save_pretrained_gmm_npz(
     n_samples: int,
     random_state: int,
 ) -> None:
-    """Write GMM parameters + metadata for :func:`~leg_odom.contact.gmm_hmm.fitting.load_pretrained_gmm_npz`."""
+    """Write GMM parameters + metadata for :func:`~leg_odom.contact.gmm_hmm_core.fitting.load_pretrained_gmm_npz`."""
     path = Path(path).expanduser()
     path.parent.mkdir(parents=True, exist_ok=True)
     fields_csv = ",".join(feature_fields)
