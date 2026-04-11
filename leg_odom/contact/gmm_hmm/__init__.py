@@ -5,11 +5,7 @@ Public imports stay stable for ``from leg_odom.contact.gmm_hmm import ...``.
 Instant feature layout is defined in :mod:`leg_odom.features`.
 """
 
-from leg_odom.contact.gmm_hmm.detector import (
-    GmmHmmContactDetector,
-    build_gmm_hmm_detectors_from_cfg,
-    zupt_R_foot_from_p_stance,
-)
+from leg_odom.contact.gmm_hmm.detector import GmmHmmContactDetector, build_gmm_hmm_detectors_from_cfg
 from leg_odom.contact.gmm_hmm.fitting import (
     fit_gmm_ordered,
     fit_offline_dual_per_leg,
@@ -58,5 +54,4 @@ __all__ = [
     "save_pretrained_dual_hmm_npz",
     "sliding_windows_flat",
     "stance_height_meta_index",
-    "zupt_R_foot_from_p_stance",
 ]

@@ -26,6 +26,7 @@ from leg_odom.eval.ekf_step_log import (
     sanitize_sequence_slug,
 )
 from leg_odom.filters.esekf import ErrorStateEkf, build_error_state_ekf
+from leg_odom.filters.zupt_measurement import zupt_isotropic_meas_from_p_stance
 from leg_odom.io.columns import (
     FOOT_FORCE_COLS,
     IMU_ACCEL_COLS,
@@ -90,7 +91,8 @@ def run_ekf_on_recording(
     Execute one recording: IMU prediction each step; optional GRF ZUPT; optional CSV history.
 
     When ``history_csv_path`` is set, writes one row per timestep (see
-    :mod:`leg_odom.eval.ekf_step_log`) with nominal state, biases, ``P`` diagonal, contact,
+    :mod:`leg_odom.eval.ekf_step_log`) with nominal state, biases, position-error ``P`` diagonal,
+    contact,
     ZUPT NIS, and per-foot world velocities.
 
     ``debug`` enables a short end-of-recording print; ``live_visualizer`` alone opens the
@@ -224,9 +226,10 @@ def run_ekf_on_recording(
                     est = det.update(step_in)
                     stance[leg_index] = bool(est.stance)
                     contact_scores[leg_index] = float(est.p_stance)
-                    contact_vars[leg_index] = float(est.zupt_meas_var)
+                    sigma_sq, r_foot = zupt_isotropic_meas_from_p_stance(float(est.p_stance))
+                    contact_vars[leg_index] = float(sigma_sq)
                     if est.stance:
-                        r_foot = np.asarray(det.last_zupt_R_foot, dtype=np.float64).reshape(3, 3)
+                        r_foot = np.asarray(r_foot, dtype=np.float64).reshape(3, 3)
                         if np.all(np.isfinite(r_foot)):
                             stance_legs.append(
                                 {

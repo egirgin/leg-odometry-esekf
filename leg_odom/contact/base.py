@@ -4,6 +4,9 @@ Abstract contact detector and output type.
 Contract: :class:`ContactDetectorStepInput` carries per-foot GRF and kinematics for every
 detector; implementations read only the fields they need. Jacobians stay in the EKF /
 kinematics path only, not in the step input.
+
+ZUPT measurement covariance :math:`R` is formed from :attr:`ContactEstimate.p_stance` in the
+EKF process loop (:mod:`leg_odom.filters.zupt_measurement`), not in detectors.
 """
 
 from __future__ import annotations
@@ -14,11 +17,6 @@ from typing import NamedTuple
 
 import numpy as np
 import numpy.typing as npt
-
-
-def zupt_isotropic_R_foot(sigma_sq: float) -> npt.NDArray[np.float64]:
-    """``R_foot = σ² I₃`` for ZUPT (no load or feature dependence)."""
-    return np.eye(3, dtype=np.float64) * float(sigma_sq)
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,7 +37,7 @@ class ContactDetectorStepInput:
       ``motor_*_tau_est`` columns parallel to ``motor_*_q`` / ``motor_*_dq``).
     - ``gyro_body_corrected``: ``ω_meas - b_gyro`` (rad/s), shape ``(3,)``. Duplicate per foot
       if convenient; same value for all feet on one timestep.
-    - ``accel_body_corrected``: ``f_meas - b_accel`` (m/s²), shape ``(3,)``. **IMU convention**
+    - ``accel_body_corrected``: ``f_meas - b_accel`` (m/s²). **IMU convention**
       must match :meth:`~leg_odom.filters.esekf.ErrorStateEkf.predict`: if the log is **specific
       force** (default), corrected accel still contains gravity in the body frame; if the
       recording is gravity-compensated (``accel_gravity_compensated`` in sequence meta), gravity
@@ -65,22 +63,14 @@ class ContactDetectorStepInput:
 
 
 class ContactEstimate(NamedTuple):
+    """Stance belief from a contact detector; ZUPT :math:`R` is derived in the EKF loop from ``p_stance``."""
+
     stance: bool
     p_stance: float
-    # Isotropic variance (m/s)² per world velocity component (logging); NaN when undefined (e.g. empty step).
-    zupt_meas_var: float
 
 
 class BaseContactDetector(ABC):
     """Shared interface for all stance estimators (GMM+HMM, CNN/GRU, Ocelot, …)."""
-
-    def __init__(self) -> None:
-        self._last_zupt_R_foot = np.full((3, 3), np.nan, dtype=np.float64)
-
-    @property
-    def last_zupt_R_foot(self) -> npt.NDArray[np.float64]:
-        """Isotropic or general ``(3, 3)`` ZUPT measurement covariance from the latest :meth:`update`."""
-        return self._last_zupt_R_foot
 
     @property
     @abstractmethod
@@ -94,7 +84,7 @@ class BaseContactDetector(ABC):
 
     @abstractmethod
     def update(self, step: ContactDetectorStepInput) -> ContactEstimate:
-        """Consume latest step; return stance belief and measurement variance for logging / ZUPT."""
+        """Consume latest step; return stance flag and stance probability."""
 
     @abstractmethod
     def reset(self) -> None:

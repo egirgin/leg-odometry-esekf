@@ -9,18 +9,15 @@ Per-foot contact detector: 2-GMM emissions + 2-state Gaussian HMM filter.
 - ``online``: start from a **pretrained** ``.npz`` (initial emissions + fault-tolerant fallback).
   A sliding buffer periodically refits the GMM; degenerate fits revert to last good or pretrained.
 
-**ZUPT covariance**
+**ZUPT**
 
-Measurement covariance is ``R_foot = (1 / max(p_stance, ε)) I₃`` so higher stance belief yields
-tighter fusion (legacy load-dependent noise idea, driven by HMM probability rather than YAML).
-The same mapping fills :attr:`~leg_odom.contact.base.BaseContactDetector.last_zupt_R_foot` and
-``ContactEstimate.zupt_meas_var`` for every step where ``p_stance`` is defined (including swing:
-low ``p_stance`` ⇒ large variance). The EKF still applies ZUPT only when ``stance`` is True.
+The EKF forms ``R_foot`` from ``p_stance`` in :mod:`leg_odom.filters.zupt_measurement`. ZUPT is
+applied only when ``stance`` is True.
 
 **Warm-up**
 
 - ``online``: until ``history_length`` instants are collected, returns ``stance=True``,
-  ``p_stance=1.0`` (tight R), and does **not** advance the HMM.
+  ``p_stance=1.0``, and does **not** advance the HMM.
 - ``offline``: no warm-up branch; no sliding refit; instant-only HMM (see above).
 """
 
@@ -46,7 +43,6 @@ from leg_odom.features import (
 )
 from leg_odom.contact.gmm_hmm_core.fitting import fit_gmm_ordered, fit_offline_per_leg, load_pretrained_gmm_npz
 from leg_odom.contact.gmm_hmm_core.hmm_gaussian import TwoStateGaussianHMM
-from leg_odom.contact.gmm_hmm_core.zupt import ZUPT_P_STANCE_FLOOR, zupt_R_foot_from_p_stance
 from leg_odom.contact.gmm_hmm.paths import resolve_pretrained_gmm_path
 from leg_odom.datasets.types import LegOdometrySequence
 from leg_odom.kinematics.base import BaseKinematics
@@ -70,7 +66,6 @@ class GmmHmmContactDetector(BaseContactDetector):
         degeneracy_max_weight: float = 0.80,
         random_state: int = 42,
     ) -> None:
-        super().__init__()
         self._spec = parse_instant_feature_fields(feature_fields or DEFAULT_INSTANT_FEATURE_FIELDS)
         n_arg = int(history_length)
         if n_arg < 1:
@@ -199,25 +194,19 @@ class GmmHmmContactDetector(BaseContactDetector):
 
         if self._mode == "online" and n < self._N:
             p_w = 1.0
-            r = zupt_R_foot_from_p_stance(p_w)
-            self._last_zupt_R_foot = r
-            return ContactEstimate(stance=True, p_stance=p_w, zupt_meas_var=float(r[0, 0]))
+            return ContactEstimate(stance=True, p_stance=p_w)
 
         win = np.stack(buf_list, axis=0)
         flat_x = flatten_history_window(win)
         self._maybe_refit_online(flat_x)
         p_stance, stance = self._hmm.update(flat_x)
-        r = zupt_R_foot_from_p_stance(p_stance)
-        self._last_zupt_R_foot = r
-        var = float(r[0, 0])
-        return ContactEstimate(stance=stance, p_stance=float(p_stance), zupt_meas_var=var)
+        return ContactEstimate(stance=stance, p_stance=float(p_stance))
 
     def reset(self) -> None:
         self._instant_buf.clear()
         self._flat_window.clear()
         self._hmm.reset_belief()
         self._clock = 0
-        self._last_zupt_R_foot = np.full((3, 3), np.nan, dtype=np.float64)
         if self._fallback_means is not None and self._fallback_covs is not None:
             self._apply_emission_params(self._fallback_means, self._fallback_covs)
 

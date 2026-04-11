@@ -31,9 +31,6 @@ contact:
   detector: none
   grf_threshold:
     force_threshold: 5.0
-    var_at_threshold: 0.0225
-    var_min: 0.0004
-    saturation_force: 350.0
     use_abs: false
   # GMM+HMM (single modality): package leg_odom/contact/gmm_hmm/; fit .npz via
   #   python -m leg_odom.training.gmm.train_gmm --precomputed-root <precomputed_instants tree> [--max-sequences N]

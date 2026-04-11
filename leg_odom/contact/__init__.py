@@ -2,12 +2,7 @@
 
 from __future__ import annotations
 
-from leg_odom.contact.base import (
-    BaseContactDetector,
-    ContactDetectorStepInput,
-    ContactEstimate,
-    zupt_isotropic_R_foot,
-)
+from leg_odom.contact.base import BaseContactDetector, ContactDetectorStepInput, ContactEstimate
 from leg_odom.contact.grf_threshold import (
     GrfThresholdContactDetector,
     build_grf_threshold_detectors_from_cfg,
@@ -41,5 +36,4 @@ __all__ = [
     "build_gmm_hmm_detectors_from_cfg",
     "build_grf_threshold_detectors_from_cfg",
     "make_quadruped_grf_threshold_detectors",
-    "zupt_isotropic_R_foot",
 ]

@@ -2,11 +2,12 @@
 Per-timestep ESEKF + contact bookkeeping for evaluation (CSV export).
 
 Mirrors the intent of ``legacy/helpers.create_log_entry`` with a fixed column set suitable
-for downstream metrics: ``sec``/``nanosec``/``t_abs``, nominal state, bias estimates, error-state diagonal variances,
+for downstream metrics: ``sec``/``nanosec``/``t_abs``, nominal state, bias estimates,
+**position** error-state diagonal variances only (``dp`` block of :class:`~leg_odom.filters.esekf.ErrorStateEkf`),
 per-leg contact / ZUPT measurement variance, batch NIS, and foot velocities in world.
 
-**Error-state diagonal** columns follow :class:`~leg_odom.filters.esekf.ErrorStateEkf`
-ordering: ``dp`` (3), ``dv`` (3), ``dtheta`` (3), ``b_a`` (3), ``b_g`` (3).
+**Error-state diagonal (position only):** ``P_dp_x``, ``P_dp_y``, ``P_dp_z`` — variances for the
+first three error states (position error in world).
 """
 
 from __future__ import annotations
@@ -25,23 +26,7 @@ from leg_odom.io.columns import TIME_NANOSEC_COL, TIME_SEC_COL
 
 _NLEGS = 4
 
-_P_DIAG_NAMES = (
-    "P_dp_x",
-    "P_dp_y",
-    "P_dp_z",
-    "P_dv_x",
-    "P_dv_y",
-    "P_dv_z",
-    "P_dth_x",
-    "P_dth_y",
-    "P_dth_z",
-    "P_dba_x",
-    "P_dba_y",
-    "P_dba_z",
-    "P_dbg_x",
-    "P_dbg_y",
-    "P_dbg_z",
-)
+_P_DIAG_NAMES = ("P_dp_x", "P_dp_y", "P_dp_z")
 
 
 def empty_zupt_info() -> dict[str, Any]:
@@ -83,8 +68,8 @@ def build_ekf_step_log_row(
     contact_score
         Detector confidence in ``[0, 1]`` (e.g. ``p_stance``).
     contact_zupt_var
-        Isotropic ZUPT variance (m/s)² per leg from the detector (always a float; ``nan`` when
-        not meaningful, e.g. swing for GRF threshold).
+        Isotropic ZUPT variance (m/s)² per leg from :func:`~leg_odom.filters.zupt_measurement.zupt_isotropic_meas_from_p_stance`
+        applied to ``p_stance`` (always finite for valid ``p_stance``).
     zupt_info
         Return value of :meth:`~leg_odom.filters.esekf.ErrorStateEkf.update_zupt` for this step
         (or :func:`empty_zupt_info`).

@@ -3,8 +3,8 @@ Neural contact detectors (CNN / GRU): load ``train_contact_nn`` artifacts and ru
 
 Uses the same instant layout as training (:func:`~leg_odom.features.instant_spec.instant_vector_from_step`)
 and the same left padding as :class:`~leg_odom.training.nn.data.SlidingWindowDatasetGru` /
-:class:`~leg_odom.training.nn.data.SlidingWindowDatasetCnn`. ZUPT covariance follows GMM+HMM:
-``R = (1 / max(p_stance, ε)) I₃``.
+:class:`~leg_odom.training.nn.data.SlidingWindowDatasetCnn`. ZUPT ``R`` is formed from ``p_stance``
+in :mod:`leg_odom.filters.zupt_measurement`.
 """
 
 from __future__ import annotations
@@ -19,7 +19,6 @@ import numpy as np
 import numpy.typing as npt
 
 from leg_odom.contact.base import BaseContactDetector, ContactDetectorStepInput, ContactEstimate
-from leg_odom.contact.gmm_hmm.detector import ZUPT_P_STANCE_FLOOR, zupt_R_foot_from_p_stance
 from leg_odom.features.instant_spec import (
     INSTANT_FEATURE_SPEC_VERSION,
     InstantFeatureSpec,
@@ -223,7 +222,6 @@ class NeuralContactDetector(BaseContactDetector):
     """Per-foot sliding window over scaled instants; shares :class:`NeuralSharedRuntime`."""
 
     def __init__(self, runtime: NeuralSharedRuntime, *, stance_probability_threshold: float = 0.5) -> None:
-        super().__init__()
         self._rt = runtime
         self._thr = float(stance_probability_threshold)
         self._buf: deque[npt.NDArray[np.float64]] = deque(maxlen=runtime.window_size)
@@ -255,11 +253,7 @@ class NeuralContactDetector(BaseContactDetector):
         win = _build_padded_window_rows(k, self._rt.window_size, self._first, self._buf)
         p_stance = self._rt.forward_window(win)
         stance = bool(p_stance >= self._thr)
-        pe = max(float(p_stance), ZUPT_P_STANCE_FLOOR)
-        zupt_var = 1.0 / pe
-        r = zupt_R_foot_from_p_stance(float(p_stance))
-        self._last_zupt_R_foot = np.asarray(r, dtype=np.float64, order="C")
-        return ContactEstimate(stance=stance, p_stance=float(p_stance), zupt_meas_var=float(zupt_var))
+        return ContactEstimate(stance=stance, p_stance=float(p_stance))
 
 
 def _resolve_nn_path(p: Path, *, workspace_root: Path | None) -> Path:

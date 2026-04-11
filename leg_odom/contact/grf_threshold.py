@@ -1,9 +1,9 @@
 """
-Hard GRF threshold contact detector: one scalar load feature per foot.
+GRF-based contact detector: one scalar load feature per foot.
 
 Uses ``foot_force_*`` style signals (vertical load proxy, Newtons in Tartanground exports).
-Stance if load ≥ ``force_threshold``. ZUPT measurement noise ``R_foot`` is **constant**
-(constructor / YAML only), not a function of GRF.
+``p_stance`` increases with load; ``stance`` is true when load is at or above ``force_threshold``.
+ZUPT measurement covariance is formed from ``p_stance`` in :mod:`leg_odom.filters.zupt_measurement`.
 
 Visualize contact vs GRF on a recording (no EKF)::
 
@@ -20,43 +20,33 @@ from typing import Any, Mapping
 import numpy as np
 import numpy.typing as npt
 
-from leg_odom.contact.base import (
-    BaseContactDetector,
-    ContactDetectorStepInput,
-    ContactEstimate,
-    zupt_isotropic_R_foot,
-)
+from leg_odom.contact.base import BaseContactDetector, ContactDetectorStepInput, ContactEstimate
+
+
+def _p_stance_from_g(g: float, force_threshold: float) -> float:
+    """Map load to [0, 1]: 0 at no load, 1 at or above ``force_threshold``."""
+    thr = max(float(force_threshold), 1e-12)
+    return float(min(1.0, max(0.0, g / thr)))
 
 
 class GrfThresholdContactDetector(BaseContactDetector):
     """
     Per-foot detector: ``feature_dim == 1`` (GRF scalar), ``history_length == 1``.
 
-    While in stance, ``zupt_meas_var`` and :attr:`~BaseContactDetector.last_zupt_R_foot`
-    use a fixed isotropic variance per velocity axis: ``zupt_meas_var`` if provided, else
-    ``var_at_threshold`` (kept for backward-compatible YAML).
+    ``stance`` is ``g >= force_threshold``; ``p_stance`` is a linear ramp in ``g`` up to 1 at the
+    threshold and above.
     """
 
     def __init__(
         self,
         *,
         force_threshold: float,
-        var_at_threshold: float,
-        var_min: float = 0.0,
-        saturation_force: float = 1.0,
-        zupt_meas_var: float | None = None,
         use_abs: bool = False,
     ) -> None:
-        super().__init__()
         if force_threshold < 0:
             raise ValueError("force_threshold must be non-negative")
-        sigma_sq = float(zupt_meas_var) if zupt_meas_var is not None else float(var_at_threshold)
-        if sigma_sq <= 0:
-            raise ValueError("zupt_meas_var / var_at_threshold must be positive")
         self._thr = float(force_threshold)
-        self._zupt_sigma_sq = sigma_sq
         self._use_abs = bool(use_abs)
-        _ = (var_min, saturation_force)  # accepted for YAML backward compatibility; unused
 
     @property
     def feature_dim(self) -> int:
@@ -70,36 +60,23 @@ class GrfThresholdContactDetector(BaseContactDetector):
         grf = float(step.grf_n)
         g = abs(grf) if self._use_abs else grf
         stance = g >= self._thr
-        r = zupt_isotropic_R_foot(self._zupt_sigma_sq)
-        self._last_zupt_R_foot = r
-        if not stance:
-            return ContactEstimate(stance=False, p_stance=0.0, zupt_meas_var=float("nan"))
-        return ContactEstimate(stance=True, p_stance=1.0, zupt_meas_var=self._zupt_sigma_sq)
+        p_stance = _p_stance_from_g(g, self._thr)
+        return ContactEstimate(stance=stance, p_stance=p_stance)
 
     def reset(self) -> None:
-        self._last_zupt_R_foot = np.full((3, 3), np.nan, dtype=np.float64)
+        pass
 
 
 def make_quadruped_grf_threshold_detectors(
     *,
     force_threshold: float = 5.0,
-    var_at_threshold: float = 0.15**2,
-    var_min: float = 0.02**2,
-    saturation_force: float = 350.0,
-    zupt_meas_var: float | None = None,
     use_abs: bool = False,
 ) -> list[GrfThresholdContactDetector]:
     """Four independent instances (same hyperparameters) for legs ``0..3``."""
-    kw = {
-        "force_threshold": force_threshold,
-        "var_at_threshold": var_at_threshold,
-        "var_min": var_min,
-        "saturation_force": saturation_force,
-        "use_abs": use_abs,
-    }
-    if zupt_meas_var is not None:
-        kw["zupt_meas_var"] = zupt_meas_var
-    return [GrfThresholdContactDetector(**kw) for _ in range(4)]
+    return [
+        GrfThresholdContactDetector(force_threshold=force_threshold, use_abs=use_abs)
+        for _ in range(4)
+    ]
 
 
 def build_grf_threshold_detectors_from_cfg(cfg: Mapping[str, Any]) -> list[GrfThresholdContactDetector]:
@@ -110,16 +87,7 @@ def build_grf_threshold_detectors_from_cfg(cfg: Mapping[str, Any]) -> list[GrfTh
     g = block.get("grf_threshold")
     if not isinstance(g, Mapping):
         return make_quadruped_grf_threshold_detectors()
-    allowed = frozenset(
-        {
-            "force_threshold",
-            "var_at_threshold",
-            "var_min",
-            "saturation_force",
-            "zupt_meas_var",
-            "use_abs",
-        }
-    )
+    allowed = frozenset({"force_threshold", "use_abs"})
     kw = {k: g[k] for k in allowed if k in g}
     return make_quadruped_grf_threshold_detectors(**kw)
 
@@ -156,8 +124,6 @@ def main() -> None:
     p.add_argument("--dataset-kind", type=str, default="tartanground")
     p.add_argument("--robot-kinematics", type=str, default="anymal", choices=("anymal", "go2"))
     p.add_argument("--force-threshold", type=float, default=5.0)
-    p.add_argument("--var-at-threshold", type=float, default=0.15**2)
-    p.add_argument("--zupt-meas-var", type=float, default=None)
     p.add_argument("--use-abs", action="store_true")
     p.add_argument("--save", type=str, default="", help="PNG path (if empty, show interactively)")
     args = p.parse_args()
@@ -174,26 +140,21 @@ def main() -> None:
 
     det_kw: dict[str, Any] = {
         "force_threshold": float(args.force_threshold),
-        "var_at_threshold": float(args.var_at_threshold),
         "use_abs": bool(args.use_abs),
     }
-    if args.zupt_meas_var is not None:
-        det_kw["zupt_meas_var"] = float(args.zupt_meas_var)
-    dets = [GrfThresholdContactDetector(**det_kw) for _ in range(kin.n_legs)]
+    dets = make_quadruped_grf_threshold_detectors(**det_kw)
 
     t_abs, grfs, st, ps = replay_detectors_on_timeline(rec.frames, kin, dets)
-    save_path = Path(args.save).expanduser() if str(args.save).strip() else None
+    sp = Path(args.save) if str(args.save).strip() else None
     plot_grf_contact_overview(
         t_abs,
         grfs,
         st,
         ps,
-        suptitle=f"GRF threshold contact — {rec.sequence_name}",
-        save_path=save_path,
-        show=save_path is None,
+        suptitle=rec.sequence_name,
+        save_path=sp,
+        show=sp is None,
     )
-    if save_path is not None:
-        print(f"Wrote {save_path.resolve()}")
 
 
 if __name__ == "__main__":

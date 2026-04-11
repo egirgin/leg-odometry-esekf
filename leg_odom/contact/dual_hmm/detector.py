@@ -27,7 +27,6 @@ from leg_odom.contact.gmm_hmm_core.fitting import (
     load_pretrained_dual_hmm_npz,
 )
 from leg_odom.contact.gmm_hmm_core.hmm_gaussian import TwoStateGaussianHMM
-from leg_odom.contact.gmm_hmm_core.zupt import zupt_R_foot_from_p_stance
 from leg_odom.datasets.types import LegOdometrySequence
 from leg_odom.features import (
     DEFAULT_INSTANT_FEATURE_FIELDS,
@@ -78,7 +77,6 @@ class DualHmmContactDetector(BaseContactDetector):
         gamma_learning_multiplier_high: float = 5.0,
         verbose: bool = False,
     ) -> None:
-        super().__init__()
         self._use_energy = bool(use_energy)
         self.last_energy_normalized: float = 0.0
         self._z_skip = float(kinematics_z_stationary_std_skip)
@@ -299,9 +297,7 @@ class DualHmmContactDetector(BaseContactDetector):
             self.last_energy_normalized = 0.0
             self._clock += 1
             self._maybe_refit_online()
-            r = zupt_R_foot_from_p_stance(1.0)
-            self._last_zupt_R_foot = r
-            return ContactEstimate(stance=True, p_stance=1.0, zupt_meas_var=float(r[0, 0]))
+            return ContactEstimate(stance=True, p_stance=1.0)
         win = np.stack([np.asarray(x, dtype=np.float64) for x in self._instant_buf], axis=0)
         flat_kin = flatten_history_window(win)
         self._kin_flat_window.append(flat_kin.copy())
@@ -344,13 +340,7 @@ class DualHmmContactDetector(BaseContactDetector):
         p_fused = fused_unnorm_st / s
 
         stance = p_fused >= _STANCE_P_FUSED_MIN
-        r = zupt_R_foot_from_p_stance(p_fused)
-        self._last_zupt_R_foot = r
-        return ContactEstimate(
-            stance=stance,
-            p_stance=float(p_fused),
-            zupt_meas_var=float(r[0, 0]),
-        )
+        return ContactEstimate(stance=stance, p_stance=float(p_fused))
 
     def reset(self) -> None:
         self._instant_buf.clear()
@@ -362,7 +352,6 @@ class DualHmmContactDetector(BaseContactDetector):
         self._prev_state_load = None
         self._prev_state_kin = None
         self.last_energy_normalized = 0.0
-        self._last_zupt_R_foot = np.full((3, 3), np.nan, dtype=np.float64)
         self._load_hmm.reset_belief()
         self._kin_hmm.reset_belief()
         if self._load_fb_m is not None and self._load_fb_c is not None:
