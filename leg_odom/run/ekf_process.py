@@ -44,7 +44,6 @@ from leg_odom.run.ekf_nominal_init import (
 )
 from leg_odom.run.dataset_factory import build_leg_odometry_dataset
 from leg_odom.run.experiment_config import (
-    live_visualizer_buffer_length,
     live_visualizer_sliding_window_s,
     live_visualizer_update_hz,
     live_visualizer_video_path,
@@ -162,7 +161,6 @@ def run_ekf_on_recording(
                 groundtruth_df=gt_for_viz,
                 t_start=t_start_viz,
                 t_end=t_end_viz,
-                buffer_length=live_visualizer_buffer_length(cfg_map),
                 video_path=live_visualizer_video_path(cfg_map),
                 sliding_window_s=slide_s,
                 dataset_hz=float(recording.median_rate_hz),
@@ -191,6 +189,7 @@ def run_ekf_on_recording(
             stance = [False] * n_legs
             contact_scores = [0.0] * n_legs
             contact_vars = [float("nan")] * n_legs
+            grf_values = [float("nan")] * n_legs
             foot_kin: list[tuple[np.ndarray, np.ndarray, np.ndarray]] = []
             stance_legs: list[dict[str, Any]] = []
 
@@ -212,8 +211,9 @@ def run_ekf_on_recording(
                 v_foot_body = np.cross(gyro_corr, pb) + jac @ qd
                 foot_kin.append((p_b, jacobian, dq_leg))
 
+                grf = float(row.get(FOOT_FORCE_COLS[leg_index], 0.0))
+                grf_values[leg_index] = grf
                 if foot_dets is not None:
-                    grf = float(row.get(FOOT_FORCE_COLS[leg_index], 0.0))
                     step_in = ContactDetectorStepInput(
                         grf_n=grf,
                         p_foot_body=np.asarray(p_b, dtype=np.float64, order="C"),
@@ -280,6 +280,8 @@ def run_ekf_on_recording(
                     float(filter_state.v[2]),
                     t_abs=float(row["t_abs"]),
                     yaw_est=yaw_est,
+                    grf_values=grf_values,
+                    p_stance_values=contact_scores,
                 )
     finally:
         if log_writer is not None:

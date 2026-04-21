@@ -58,7 +58,6 @@ def default_experiment_dict() -> dict[str, Any]:
                 "live_visualizer": {
                     "enabled": False,
                     "sliding_window_s": 10.0,
-                    "buffer_length": 5000,
                     "video_path": None,
                     "hz": None,
                 },
@@ -240,14 +239,6 @@ def validate_experiment_dict(
         raise ValueError(
             "run.debug.live_visualizer.sliding_window_s must be a finite positive number"
         )
-
-    buf_lv = lv.get("buffer_length", 5000)
-    if isinstance(buf_lv, bool):
-        raise TypeError("run.debug.live_visualizer.buffer_length must be an integer >= 1")
-    if isinstance(buf_lv, float) and buf_lv == int(buf_lv):
-        buf_lv = int(buf_lv)
-    if not isinstance(buf_lv, int) or buf_lv < 1:
-        raise TypeError("run.debug.live_visualizer.buffer_length must be an integer >= 1")
 
     vp = lv.get("video_path")
     if vp is not None and vp != "" and not isinstance(vp, str):
@@ -556,12 +547,6 @@ def live_visualizer_sliding_window_s(cfg: Mapping[str, Any]) -> float:
     """Sliding time-window width [s] (``run.debug.live_visualizer.sliding_window_s``)."""
     lv = cfg.get("run", {}).get("debug", {}).get("live_visualizer") or {}
     return float(lv.get("sliding_window_s", 60.0))
-
-
-def live_visualizer_buffer_length(cfg: Mapping[str, Any]) -> int:
-    """Ring buffer length for live time-series (``run.debug.live_visualizer.buffer_length``)."""
-    lv = cfg.get("run", {}).get("debug", {}).get("live_visualizer") or {}
-    return int(lv.get("buffer_length", 5000))
 
 
 def live_visualizer_video_path(cfg: Mapping[str, Any]) -> str | None:

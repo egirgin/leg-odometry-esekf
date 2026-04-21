@@ -12,9 +12,8 @@ run:
     enabled: true
     live_visualizer:
       enabled: true
-      sliding_window_s: 10.0
-      buffer_length: 50000
-      video_path: null
+      sliding_window_s: 5.0
+      video_path: /home/girgine/Documents/leg-odometry/tartanground/ForestEnv_Camera/ForestEnv/Data_anymal/P2001/image_lcam_front
       # null = redraw every EKF step; set e.g. 100 to cap UI refresh (effective min(hz, dataset_hz))
       hz: 10
 

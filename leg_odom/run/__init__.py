@@ -7,7 +7,6 @@ from typing import Any
 from leg_odom.run.experiment_config import (
     EXPERIMENT_SCHEMA_VERSION,
     debug_effective_from_cli,
-    live_visualizer_buffer_length,
     live_visualizer_effective,
     live_visualizer_sliding_window_s,
     live_visualizer_update_hz,
@@ -38,7 +37,6 @@ def __getattr__(name: str) -> Any:
 __all__ = [
     "EXPERIMENT_SCHEMA_VERSION",
     "debug_effective_from_cli",
-    "live_visualizer_buffer_length",
     "live_visualizer_effective",
     "live_visualizer_sliding_window_s",
     "live_visualizer_update_hz",

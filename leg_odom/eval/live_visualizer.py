@@ -29,6 +29,8 @@ from scipy.spatial.transform import Rotation
 from leg_odom.io.columns import IMU_BODY_QUAT_COLS, TIME_NANOSEC_COL, TIME_SEC_COL
 
 SLIDING_TIME_WINDOW_S = 60.0
+BUFFER_SAFETY_MARGIN = 1.1
+MIN_SERIES_BUFFER = 64
 
 
 def _viz_stride_from_rates(update_hz: float | None, dataset_hz: float) -> int:
@@ -161,7 +163,6 @@ class LiveVisualizer:
         *,
         t_start: float,
         t_end: float,
-        buffer_length: int = 5000,
         video_path: str | None = None,
         sliding_window_s: float = SLIDING_TIME_WINDOW_S,
         dataset_hz: float = 0.0,
@@ -175,18 +176,25 @@ class LiveVisualizer:
         self._t_span = max(self.t_end - self.t_start, 1e-9)
         self._window = float(sliding_window_s)
 
-        self.buffer_length = buffer_length
+        ds_hz = float(dataset_hz)
+        if math.isfinite(ds_hz) and ds_hz > 0.0:
+            buf_len = int(math.ceil(self._window * ds_hz * BUFFER_SAFETY_MARGIN))
+        else:
+            buf_len = MIN_SERIES_BUFFER
+        self.buffer_length = max(MIN_SERIES_BUFFER, buf_len)
         self.step_count = 0
-        self._viz_stride = _viz_stride_from_rates(update_hz, float(dataset_hz))
+        self._viz_stride = _viz_stride_from_rates(update_hz, ds_hz)
 
         self._p0x: float | None = None
         self._p0y: float | None = None
 
-        self.hist_t: deque[float] = deque(maxlen=buffer_length)
-        self.hist_vel_x: deque[float] = deque(maxlen=buffer_length)
-        self.hist_vel_y: deque[float] = deque(maxlen=buffer_length)
-        self.hist_vel_z: deque[float] = deque(maxlen=buffer_length)
-        self.hist_pz: deque[float] = deque(maxlen=buffer_length)
+        self.hist_t: deque[float] = deque(maxlen=self.buffer_length)
+        self.hist_vel_x: deque[float] = deque(maxlen=self.buffer_length)
+        self.hist_vel_y: deque[float] = deque(maxlen=self.buffer_length)
+        self.hist_vel_z: deque[float] = deque(maxlen=self.buffer_length)
+        self.hist_pz: deque[float] = deque(maxlen=self.buffer_length)
+        self.hist_grf: list[deque[float]] = [deque(maxlen=self.buffer_length) for _ in range(4)]
+        self.hist_pstance: list[deque[float]] = [deque(maxlen=self.buffer_length) for _ in range(4)]
 
         gt_pack = _prepare_gt_timeseries(groundtruth_df)
         if gt_pack is not None:
@@ -211,8 +219,13 @@ class LiveVisualizer:
         self.fig, self.axs = plt.subplots(2, 2, figsize=(14, 10))
         self.fig.canvas.manager.set_window_title(f"Monitor: {run_name}")
 
-        # --- Trajectory ---
-        self.ax_traj = self.axs[0, 0]
+        # --- Top-left quarter split horizontally: trajectory + yaw ---
+        trajyaw_ss = self.axs[0, 0].get_subplotspec()
+        self.axs[0, 0].remove()
+        gs_trajyaw = gridspec.GridSpecFromSubplotSpec(
+            1, 2, trajyaw_ss, width_ratios=[2.4, 1.0], wspace=0.28
+        )
+        self.ax_traj = self.fig.add_subplot(gs_trajyaw[0, 0])
         self.ax_traj.set_title("2D position (start-centered)", fontweight="bold")
         self.ax_traj.set_xlabel("X [m]")
         self.ax_traj.set_ylabel("Y [m]")
@@ -238,57 +251,16 @@ class LiveVisualizer:
 
         self.traj_x_hist: list[float] = []
         self.traj_y_hist: list[float] = []
-        self.line_traj, = self.ax_traj.plot([], [], color="#007ACC", lw=2.5, label="Estimated")
+        self.line_traj, = self.ax_traj.plot([], [], color="#007ACC", lw=2.2, label="Estimated")
         self.point_head, = self.ax_traj.plot(
             [], [], marker="o", color="#D93025", markersize=6, zorder=5
         )
         self.ax_traj.legend(loc="upper right", fontsize="x-small")
 
-        # --- Camera placeholder ---
-        self.ax_video = self.axs[0, 1]
-        self.ax_video.set_title("Ego camera (N/A)", fontweight="bold")
-        self.ax_video.axis("off")
-        self.ax_video.text(
-            0.5,
-            0.5,
-            "No camera stream\n(Tartanground split logs)",
-            ha="center",
-            va="center",
-            transform=self.ax_video.transAxes,
-            fontsize=11,
-            color="#555555",
-        )
-
-        # --- Base p_z vs time + planar heading (unit circle) ---
-        pz_ss = self.axs[1, 0].get_subplotspec()
-        self.axs[1, 0].remove()
-        gs_pz = gridspec.GridSpecFromSubplotSpec(2, 1, pz_ss, height_ratios=[1.0, 1.0], hspace=0.4)
-        self.ax_pz = self.fig.add_subplot(gs_pz[0, 0])
-        self.ax_pz.set_title(
-            f"Base position z (world), {self._window:.0f}s window", fontweight="bold"
-        )
-        self.ax_pz.set_xlabel("Time [s]")
-        self.ax_pz.set_ylabel("z [m]")
-        self.ax_pz.grid(True, linestyle="--", alpha=0.6)
-        self.line_pz, = self.ax_pz.plot([], [], color="#6A1B9A", lw=1.5, label="p_z est.")
-        if self._gt_t is not None:
-            (self.line_gt_pz,) = self.ax_pz.plot(
-                [],
-                [],
-                color="#6A1B9A",
-                linestyle="--",
-                lw=1.2,
-                alpha=0.35,
-                label="p_z GT",
-            )
-        else:
-            self.line_gt_pz = None
-        self.ax_pz.legend(loc="upper right", fontsize="x-small")
-
-        self.ax_yaw = self.fig.add_subplot(gs_pz[1, 0])
-        self.ax_yaw.set_title("Heading (world XY, unit circle)", fontweight="bold", fontsize=10)
-        self.ax_yaw.set_xlabel("cos ψ → +X (trajectory)")
-        self.ax_yaw.set_ylabel("sin ψ → +Y (trajectory)")
+        self.ax_yaw = self.fig.add_subplot(gs_trajyaw[0, 1])
+        self.ax_yaw.set_title("Heading (world)", fontweight="bold", fontsize=10)
+        self.ax_yaw.set_xlabel("+X")
+        self.ax_yaw.set_ylabel("+Y")
         self.ax_yaw.set_aspect("equal")
         self.ax_yaw.grid(True, linestyle="--", alpha=0.4)
         th = np.linspace(0.0, 2.0 * np.pi, 200)
@@ -321,12 +293,81 @@ class LiveVisualizer:
             self.line_yaw_gt = None
         self.ax_yaw.legend(loc="upper right", fontsize="x-small")
 
+        # --- Camera placeholder ---
+        self.ax_video = self.axs[0, 1]
+        self.ax_video.set_title("Ego camera (N/A)", fontweight="bold")
+        self.ax_video.axis("off")
+        self.ax_video.text(
+            0.5,
+            0.5,
+            "No camera stream\n(Tartanground split logs)",
+            ha="center",
+            va="center",
+            transform=self.ax_video.transAxes,
+            fontsize=11,
+            color="#555555",
+        )
+
+        # --- Bottom-left quarter: p_z (top) + contact state 2x2 (bottom) ---
+        pz_ss = self.axs[1, 0].get_subplotspec()
+        self.axs[1, 0].remove()
+        gs_pz = gridspec.GridSpecFromSubplotSpec(2, 1, pz_ss, height_ratios=[1.0, 1.45], hspace=0.35)
+        self.ax_pz = self.fig.add_subplot(gs_pz[0, 0])
+        self.ax_pz.set_title(
+            f"Base position z (world)", fontweight="bold"
+        )
+        self.ax_pz.set_xlabel("Time [s]")
+        self.ax_pz.set_ylabel("z [m]")
+        self.ax_pz.grid(True, linestyle="--", alpha=0.6)
+        self.line_pz, = self.ax_pz.plot([], [], color="#6A1B9A", lw=1.5, label="p_z est.")
+        if self._gt_t is not None:
+            (self.line_gt_pz,) = self.ax_pz.plot(
+                [],
+                [],
+                color="#6A1B9A",
+                linestyle="--",
+                lw=1.2,
+                alpha=0.35,
+                label="p_z GT",
+            )
+        else:
+            self.line_gt_pz = None
+        self.ax_pz.legend(loc="upper right", fontsize="x-small")
+
+        gs_contact = gridspec.GridSpecFromSubplotSpec(2, 2, gs_pz[1, 0], wspace=0.3, hspace=0.4)
+        leg_labels = ("Leg 0", "Leg 1", "Leg 2", "Leg 3")
+        self.ax_contact_grf: list[plt.Axes] = []
+        self.ax_contact_p: list[plt.Axes] = []
+        self.line_contact_grf: list[plt.Line2D] = []
+        self.line_contact_p: list[plt.Line2D] = []
+        for leg_i in range(4):
+            ax = self.fig.add_subplot(gs_contact[leg_i // 2, leg_i % 2])
+            ax.set_title(leg_labels[leg_i], fontsize=9, fontweight="bold")
+            if leg_i > 1:
+                ax.set_xlabel("Time [s]", fontsize=8)
+            if leg_i % 2 == 0:
+                ax.set_ylabel("GRF [N]", color="#E65100", fontsize=8)
+            ax.tick_params(axis="x", labelsize=7)
+            ax.tick_params(axis="y", labelcolor="#E65100", labelsize=7)
+            ax.grid(True, linestyle="--", alpha=0.5)
+            (line_grf,) = ax.plot([], [], color="#E65100", lw=1.0, label="GRF")
+            ax2 = ax.twinx()
+            if leg_i % 2 == 1:
+                ax2.set_ylabel("St. Prob.", color="#1565C0", fontsize=8)
+            ax2.tick_params(axis="y", labelcolor="#1565C0", labelsize=7)
+            ax2.set_ylim(-0.05, 1.05)
+            (line_p,) = ax2.plot([], [], color="#1565C0", lw=1.0, linestyle="--", label="p_stance")
+            self.ax_contact_grf.append(ax)
+            self.ax_contact_p.append(ax2)
+            self.line_contact_grf.append(line_grf)
+            self.line_contact_p.append(line_p)
+
         # --- Velocity: single axes, six lines (est solid, GT dashed) ---
         vel_ss = self.axs[1, 1].get_subplotspec()
         self.axs[1, 1].remove()
         self.ax_vel = self.fig.add_subplot(vel_ss)
         self.ax_vel.set_title(
-            f"Base linear velocity (world), {self._window:.0f}s window",
+            f"Base linear velocity (world)",
             fontweight="bold",
         )
         self.ax_vel.set_xlabel("Time [s]")
@@ -454,6 +495,8 @@ class LiveVisualizer:
         *,
         t_abs: float,
         yaw_est: float | None = None,
+        grf_values: list[float] | tuple[float, ...] | None = None,
+        p_stance_values: list[float] | tuple[float, ...] | None = None,
     ) -> None:
         self.step_count += 1
         t_now = float(t_abs)
@@ -484,9 +527,24 @@ class LiveVisualizer:
         self.line_vy.set_data(t_arr, list(self.hist_vel_y))
         self.line_vz.set_data(t_arr, list(self.hist_vel_z))
         self.line_pz.set_data(t_arr, list(self.hist_pz))
+        grf_vals = np.asarray(grf_values if grf_values is not None else [np.nan] * 4, dtype=np.float64)
+        p_vals = np.asarray(
+            p_stance_values if p_stance_values is not None else [np.nan] * 4, dtype=np.float64
+        )
+        if grf_vals.shape[0] < 4:
+            grf_vals = np.pad(grf_vals, (0, 4 - grf_vals.shape[0]), constant_values=np.nan)
+        if p_vals.shape[0] < 4:
+            p_vals = np.pad(p_vals, (0, 4 - p_vals.shape[0]), constant_values=np.nan)
+        for leg_i in range(4):
+            self.hist_grf[leg_i].append(float(grf_vals[leg_i]))
+            self.hist_pstance[leg_i].append(float(p_vals[leg_i]))
+            self.line_contact_grf[leg_i].set_data(t_arr, list(self.hist_grf[leg_i]))
+            self.line_contact_p[leg_i].set_data(t_arr, list(self.hist_pstance[leg_i]))
 
         self._update_progress(t_now)
         t_lo, t_hi = self._apply_sliding_xlims(t_now)
+        for leg_i in range(4):
+            self.ax_contact_grf[leg_i].set_xlim(t_lo, t_hi if t_hi > t_lo else t_lo + 1e-6)
 
         gmask = self._gt_mask(t_lo, t_hi)
         if self.line_gt_pz is not None:
@@ -533,6 +591,18 @@ class LiveVisualizer:
             vmin, vmax = min(v_cand), max(v_cand)
             vpad = max(0.05 * (vmax - vmin), 0.2)
             self.ax_vel.set_ylim(vmin - vpad, vmax + vpad)
+
+        for leg_i in range(4):
+            t_leg = np.array(t_arr, dtype=np.float64)
+            g_leg = np.array(list(self.hist_grf[leg_i]), dtype=np.float64)
+            win_leg = (t_leg >= t_lo) & (t_leg <= t_hi)
+            if np.any(win_leg):
+                vals = g_leg[win_leg]
+                finite = vals[np.isfinite(vals)]
+                if finite.size > 0:
+                    gmin, gmax = float(np.min(finite)), float(np.max(finite))
+                    gpad = max(0.08 * (gmax - gmin), 1.0)
+                    self.ax_contact_grf[leg_i].set_ylim(gmin - gpad, gmax + gpad)
 
         if yaw_est is not None and np.isfinite(yaw_est):
             ye = float(yaw_est)
