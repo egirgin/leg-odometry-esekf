@@ -14,7 +14,6 @@ run:
       enabled: false
       sliding_window_s: 60.0
       buffer_length: 5000
-      video_path: null
       # Target matplotlib refresh [Hz]; null = every step; capped at recording median_rate_hz
       hz: null
 

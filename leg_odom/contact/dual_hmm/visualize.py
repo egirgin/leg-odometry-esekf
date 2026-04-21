@@ -99,7 +99,6 @@ def _minimal_cfg(sequence_dir: str, robot: str, dataset_kind: str) -> dict:
                     "enabled": False,
                     "sliding_window_s": 10.0,
                     "buffer_length": 5000,
-                    "video_path": None,
                     "hz": None,
                 },
             },

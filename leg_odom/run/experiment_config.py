@@ -58,7 +58,6 @@ def default_experiment_dict() -> dict[str, Any]:
                 "live_visualizer": {
                     "enabled": False,
                     "sliding_window_s": 10.0,
-                    "video_path": None,
                     "hz": None,
                 },
             },
@@ -239,10 +238,6 @@ def validate_experiment_dict(
         raise ValueError(
             "run.debug.live_visualizer.sliding_window_s must be a finite positive number"
         )
-
-    vp = lv.get("video_path")
-    if vp is not None and vp != "" and not isinstance(vp, str):
-        raise TypeError("run.debug.live_visualizer.video_path must be a string or null")
 
     hz_lv = lv.get("hz")
     if hz_lv is not None and hz_lv != "":
@@ -547,15 +542,6 @@ def live_visualizer_sliding_window_s(cfg: Mapping[str, Any]) -> float:
     """Sliding time-window width [s] (``run.debug.live_visualizer.sliding_window_s``)."""
     lv = cfg.get("run", {}).get("debug", {}).get("live_visualizer") or {}
     return float(lv.get("sliding_window_s", 60.0))
-
-
-def live_visualizer_video_path(cfg: Mapping[str, Any]) -> str | None:
-    """Optional ego video path for future wiring (``run.debug.live_visualizer.video_path``)."""
-    lv = cfg.get("run", {}).get("debug", {}).get("live_visualizer") or {}
-    vp = lv.get("video_path")
-    if vp is None or vp == "":
-        return None
-    return str(vp)
 
 
 def live_visualizer_update_hz(cfg: Mapping[str, Any]) -> float | None:

@@ -166,7 +166,6 @@ def main() -> None:
                     "enabled": False,
                     "sliding_window_s": 10.0,
                     "buffer_length": 5000,
-                    "video_path": None,
                     "hz": None,
                 },
             },

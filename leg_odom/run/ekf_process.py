@@ -46,7 +46,6 @@ from leg_odom.run.dataset_factory import build_leg_odometry_dataset
 from leg_odom.run.experiment_config import (
     live_visualizer_sliding_window_s,
     live_visualizer_update_hz,
-    live_visualizer_video_path,
 )
 from leg_odom.run.kinematics_factory import build_kinematics_backend
 
@@ -156,12 +155,14 @@ def run_ekf_on_recording(
                             gt_for_viz[c] = recording.frames[c].to_numpy()
             cfg_map = experiment_cfg if isinstance(experiment_cfg, Mapping) else {}
             slide_s = live_visualizer_sliding_window_s(cfg_map)
+            cam_raw = recording.meta.get("camera_frames")
+            camera_frames = cam_raw if isinstance(cam_raw, list) else []
             live_viz = LiveVisualizer(
                 recording.sequence_name,
                 groundtruth_df=gt_for_viz,
                 t_start=t_start_viz,
                 t_end=t_end_viz,
-                video_path=live_visualizer_video_path(cfg_map),
+                camera_frames=camera_frames,
                 sliding_window_s=slide_s,
                 dataset_hz=float(recording.median_rate_hz),
                 update_hz=live_visualizer_update_hz(cfg_map),

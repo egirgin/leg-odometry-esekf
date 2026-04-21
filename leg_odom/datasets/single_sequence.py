@@ -11,7 +11,9 @@ from typing import Any
 import pandas as pd
 
 from leg_odom.datasets.base import BaseLegOdometryDataset
+from leg_odom.datasets.frame_timeline import discover_frame_timeline
 from leg_odom.datasets.types import LegOdometrySequence
+from leg_odom.io.columns import TIME_NANOSEC_COL, TIME_SEC_COL
 from leg_odom.io.validation import validate_prepared_split_dataframe
 
 
@@ -62,11 +64,20 @@ class CachedSingleSequenceDataset(BaseLegOdometryDataset):
         df, hz, gt, accel_gc, meta_extra = self._load_prepared()
         if self._validate:
             validate_prepared_split_dataframe(df)
+        wall_frames = discover_frame_timeline(self._sequence_dir)
+        s0 = pd.to_numeric(df[TIME_SEC_COL].iloc[0], errors="coerce")
+        ns0 = pd.to_numeric(df[TIME_NANOSEC_COL].iloc[0], errors="coerce")
+        t0_wall = float(s0) + float(ns0) * 1e-9
+        camera_frames = [
+            {"path": rec["path"], "t_sec": float(rec["t_sec"]) - t0_wall} for rec in wall_frames
+        ]
         meta: dict[str, Any] = {
             **self._extra,
             "sequence_dir": str(self._sequence_dir),
             "accel_gravity_compensated": accel_gc,
             **meta_extra,
+            "camera_frames": camera_frames,
+            "has_camera_frames": bool(camera_frames),
         }
         return LegOdometrySequence(
             frames=df,

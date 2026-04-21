@@ -13,7 +13,6 @@ run:
     live_visualizer:
       enabled: true
       sliding_window_s: 5.0
-      video_path: /home/girgine/Documents/leg-odometry/tartanground/ForestEnv_Camera/ForestEnv/Data_anymal/P2001/image_lcam_front
       # null = redraw every EKF step; set e.g. 100 to cap UI refresh (effective min(hz, dataset_hz))
       hz: 10
 
@@ -24,7 +23,7 @@ dataset:
   kind: tartanground
   # Absolute path to one trajectory directory (imu.csv + *_bag.csv). Tilde ~ is allowed.
   #sequence_dir: /home/girgine/Documents/leg-odometry/iros/data_anymal
-  sequence_dir: /home/girgine/Documents/leg-odometry/tartanground/processed/Downtown/P2001
+  sequence_dir: /home/girgine/Documents/leg-odometry/tartanground/processed/Downtown/P2000
 
 contact:
   detector: neural

@@ -1,15 +1,17 @@
 """
 Live matplotlib monitor for EKF runs: 2D trajectory + GT, camera placeholder, base z, velocity.
 
-**Camera**: not wired for Tartanground / current split logs (no ego video in the dataset
-pipeline). The top-right axes shows a static placeholder; see the plan section *Live visualizer
-and camera (Tartanground)* in ``TARTANGROUND_EKF_REFACTOR_PLAN.md``.
+**Camera**: optional ``<sequence_dir>/frames/*.png`` discovered at dataset load time
+(``LegOdometrySequence.meta["camera_frames"]``). Stems are ``<sec>_<frac>`` (wall epoch; ``frac``
+is digit-only, truncated or right-padded to 9 digits then interpreted as nanoseconds; see
+:mod:`leg_odom.datasets.frame_timeline`). Timestamps are shifted to match ``t_abs``. The top-right
+axes shows the nearest frame by ``t_abs`` when frames exist, else a static placeholder.
 
 Offline replay uses ``t_abs`` from the merged timeline, a configurable sliding x-window on the
 z/velocity panels, optional **GT** ``p_z`` and **GT velocity** (from differentiated position),
 a **unit-circle heading** panel (estimate vs GT yaw when available; GT yaw from body quaternions
 when present else velocity heading, with **unwrapped** angles before time interpolation), and a bottom progress bar
-for ``t_start`` … ``t_end``. Ring-buffer length, optional ``video_path``, and optional
+for ``t_start`` … ``t_end``. Ring-buffer length and optional
 ``update_hz`` (matplotlib refresh throttling vs dataset rate) are set from experiment YAML under
 ``run.debug.live_visualizer`` when wired from :mod:`leg_odom.run.ekf_process`.
 """
@@ -18,8 +20,11 @@ from __future__ import annotations
 
 import math
 from collections import deque
+from collections.abc import Mapping
+from typing import Any
 
 import matplotlib.gridspec as gridspec
+import matplotlib.image as mpl_image
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -31,6 +36,48 @@ from leg_odom.io.columns import IMU_BODY_QUAT_COLS, TIME_NANOSEC_COL, TIME_SEC_C
 SLIDING_TIME_WINDOW_S = 60.0
 BUFFER_SAFETY_MARGIN = 1.1
 MIN_SERIES_BUFFER = 64
+
+
+def _coerce_camera_frames(
+    cam: list[Mapping[str, Any]] | None,
+) -> tuple[list[str], np.ndarray]:
+    """Paths and sorted ``t_abs``-aligned times from ``meta["camera_frames"]`` records."""
+    if not cam:
+        return [], np.zeros(0, dtype=np.float64)
+    paths: list[str] = []
+    times: list[float] = []
+    for item in cam:
+        if not isinstance(item, Mapping):
+            continue
+        p = item.get("path")
+        t = item.get("t_sec")
+        if isinstance(p, str) and p.strip() and isinstance(t, (int, float)):
+            tf = float(t)
+            if math.isfinite(tf):
+                paths.append(str(p))
+                times.append(tf)
+    if not times:
+        return [], np.zeros(0, dtype=np.float64)
+    t_arr = np.asarray(times, dtype=np.float64)
+    order = np.argsort(t_arr, kind="mergesort")
+    t_sorted = t_arr[order]
+    paths_sorted = [paths[int(i)] for i in order]
+    return paths_sorted, t_sorted
+
+
+def _nearest_frame_index(times: np.ndarray, t_now: float) -> int:
+    if times.size == 0:
+        return -1
+    i = int(np.searchsorted(times, t_now, side="left"))
+    best = 0
+    best_d = float("inf")
+    for j in (i - 1, i, i + 1):
+        if 0 <= j < times.size:
+            d = abs(float(times[j]) - t_now)
+            if d < best_d:
+                best_d = d
+                best = j
+    return int(best)
 
 
 def _viz_stride_from_rates(update_hz: float | None, dataset_hz: float) -> int:
@@ -141,7 +188,7 @@ def _prepare_gt_timeseries(groundtruth_df: pd.DataFrame | None) -> tuple[np.ndar
 
 class LiveVisualizer:
     """
-    Figure: trajectory (+ optional GT), camera placeholder, **p_z** vs time with **heading** on a
+    Figure: trajectory (+ optional GT), optional ego camera from ``camera_frames``, **p_z** vs time with **heading** on a
     unit circle below (estimate vs GT yaw), **one** velocity axes with six lines (est + GT
     ``vx,vy,vz``), and a bottom progress bar for ``[t_start, t_end]``.
 
@@ -163,13 +210,13 @@ class LiveVisualizer:
         *,
         t_start: float,
         t_end: float,
-        video_path: str | None = None,
+        camera_frames: list[Mapping[str, Any]] | None = None,
         sliding_window_s: float = SLIDING_TIME_WINDOW_S,
         dataset_hz: float = 0.0,
         update_hz: float | None = None,
     ) -> None:
-        if video_path:
-            pass
+        self._camera_paths, self._camera_times = _coerce_camera_frames(camera_frames)
+        self._im_camera = None  # matplotlib.image.AxesImage when frames are shown
 
         self.t_start = float(t_start)
         self.t_end = float(t_end)
@@ -293,20 +340,41 @@ class LiveVisualizer:
             self.line_yaw_gt = None
         self.ax_yaw.legend(loc="upper right", fontsize="x-small")
 
-        # --- Camera placeholder ---
+        # --- Camera: frames from dataset ``meta`` or placeholder ---
         self.ax_video = self.axs[0, 1]
-        self.ax_video.set_title("Ego camera (N/A)", fontweight="bold")
         self.ax_video.axis("off")
-        self.ax_video.text(
-            0.5,
-            0.5,
-            "No camera stream\n(Tartanground split logs)",
-            ha="center",
-            va="center",
-            transform=self.ax_video.transAxes,
-            fontsize=11,
-            color="#555555",
-        )
+        if self._camera_times.size > 0:
+            self.ax_video.set_title("Ego camera", fontweight="bold")
+            try:
+                arr0 = mpl_image.imread(self._camera_paths[0])
+                self._im_camera = self.ax_video.imshow(arr0, aspect="equal")
+            except Exception:
+                self._im_camera = None
+                self._camera_times = np.zeros(0, dtype=np.float64)
+                self._camera_paths = []
+                self.ax_video.set_title("Ego camera (N/A)", fontweight="bold")
+                self.ax_video.text(
+                    0.5,
+                    0.5,
+                    "No camera stream\n(could not read frames)",
+                    ha="center",
+                    va="center",
+                    transform=self.ax_video.transAxes,
+                    fontsize=11,
+                    color="#555555",
+                )
+        else:
+            self.ax_video.set_title("Ego camera (N/A)", fontweight="bold")
+            self.ax_video.text(
+                0.5,
+                0.5,
+                "No camera stream\n(no frames/ folder or images)",
+                ha="center",
+                va="center",
+                transform=self.ax_video.transAxes,
+                fontsize=11,
+                color="#555555",
+            )
 
         # --- Bottom-left quarter: p_z (top) + contact state 2x2 (bottom) ---
         pz_ss = self.axs[1, 0].get_subplotspec()
@@ -484,6 +552,30 @@ class LiveVisualizer:
         self._prog_fill.set_width(frac)
         self._prog_text.set_text(f"{100.0 * frac:.1f}%  t={t_now:.3f}s / {self.t_end:.3f}s")
 
+    def _update_camera_frame(self, t_now: float) -> None:
+        if self._camera_times.size == 0 or self._im_camera is None:
+            return
+        idx = _nearest_frame_index(self._camera_times, float(t_now))
+        if idx < 0:
+            return
+        try:
+            arr = mpl_image.imread(self._camera_paths[idx])
+        except Exception:
+            return
+        try:
+            cur = self._im_camera.get_array()
+            if cur.shape == arr.shape:
+                self._im_camera.set_data(arr)
+            else:
+                self._im_camera.remove()
+                self._im_camera = self.ax_video.imshow(arr, aspect="equal")
+        except Exception:
+            try:
+                self._im_camera.remove()
+            except Exception:
+                pass
+            self._im_camera = self.ax_video.imshow(arr, aspect="equal")
+
     def update(
         self,
         px: float,
@@ -628,6 +720,7 @@ class LiveVisualizer:
 
         refresh = self._viz_stride <= 1 or ((self.step_count - 1) % self._viz_stride == 0)
         if refresh:
+            self._update_camera_frame(t_now)
             span_x = self.max_x - self.min_x
             span_y = self.max_y - self.min_y
             max_span = max(span_x, span_y)
