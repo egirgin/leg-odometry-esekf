@@ -6,6 +6,10 @@ The project supports two dataset products today:
 - `tartanground` for ANYmal sequence logs,
 - `ocelot` for Unitree Go2 lowstate-style logs converted to project CSV format.
 
+### TartanGround
+To download `TartanGround` dataset, check the Readme under `data/tartanground`.
+
+
 ## Goal and Scope
 
 Goal:
@@ -157,7 +161,7 @@ python main.py --config config/default_experiment.yaml
 | ------- | ------- |
 | `run.*` | run naming and debug behavior |
 | `dataset.kind` | dataset loader type (`tartanground` or `ocelot`) |
-| `dataset.sequence_dir` | absolute path to one sequence folder |
+| `dataset.sequence_dir` | one sequence folder: absolute path, or path relative to the repo (directory with `main.py`) |
 | `robot.kinematics` | kinematics backend (`anymal` or `go2`) |
 | `contact.detector` | detector selection (`grf_threshold`, `gmm`, `dual_hmm`, `neural`, `ocelot`) |
 | `ekf.*` | filter and noise configuration |

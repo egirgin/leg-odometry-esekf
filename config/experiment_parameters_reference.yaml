@@ -23,7 +23,8 @@ robot:
 dataset:
   kind: tartanground
   # Output path uses dataset.kind: base_dir / output_{run.name} / kind / parent(sequence_dir).name / traj
-  # Absolute path to the trajectory directory (imu.csv + *_bag.csv). No dataset.data_root.
+  # Trajectory directory (imu.csv + *_bag.csv): absolute, or path relative to the repo
+  # root (directory containing main.py). No dataset.data_root.
   sequence_dir: /path/to/your/sequence_directory
 
 contact:

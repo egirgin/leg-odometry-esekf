@@ -16,3 +16,5 @@ tests/
 !/examples/
 /leg_odom/training/nn/pretrained_*/
 /leg_odom/training/ssl_nn 
+/data/tartanground/processed
+/data/tartanground/anymal

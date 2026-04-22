@@ -21,9 +21,10 @@ robot:
 
 dataset:
   kind: tartanground
-  # Absolute path to one trajectory directory (imu.csv + *_bag.csv). Tilde ~ is allowed.
+  # Trajectory directory (imu.csv + *_bag.csv): absolute path, or relative to the repo
+  # (directory with main.py). Tilde ~ is allowed in absolute paths.
   #sequence_dir: /home/girgine/Documents/leg-odometry/iros/data_anymal
-  sequence_dir: /home/girgine/Documents/leg-odometry/tartanground/processed/Downtown/P2000
+  sequence_dir: ./data/tartanground/processed/Downtown/P2000
 
 contact:
   detector: neural

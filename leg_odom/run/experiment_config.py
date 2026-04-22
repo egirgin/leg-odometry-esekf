@@ -9,7 +9,7 @@ This is **user-facing experiment configuration**, distinct from :mod:`leg_odom.t
 1. Defaults + merge — fill omitted YAML keys; :func:`load_experiment_yaml` chains in file-level checks.
 2. Load — parse YAML, require ``run.name`` and ``dataset.sequence_dir`` in the **file** (``dataset.kind`` must be valid; defaults apply if omitted), then merge.
 3. Validate — schema/enums/types; optional ``strict_paths`` touches disk (sequence dir, noise YAML).
-4. Resolve paths — canonicalize absolute ``dataset.sequence_dir`` and relative ``ekf.noise_config`` for snapshots.
+4. Resolve paths — canonicalize ``dataset.sequence_dir`` (absolute or relative to ``workspace_root``) and relative ``ekf.noise_config`` for snapshots.
 5. Debug accessors — small readers for ``main.py`` / EKF (effective flags vs YAML-only toggles).
 """
 
@@ -157,7 +157,9 @@ def validate_experiment_dict(
     strict_paths
         If True, require resolved ``dataset`` paths to exist (IMU + bag layout).
     workspace_root
-        Required when ``strict_paths`` is True; used to resolve relative ``ekf.noise_config``.
+        Required when ``strict_paths`` is True. Also used to resolve a **relative**
+        ``dataset.sequence_dir`` (repo root, e.g. the directory containing ``main.py``)
+        and relative ``ekf.noise_config``.
     """
     # schema + high-level enums
     ver = int(cfg.get("schema_version", -1))
@@ -182,16 +184,19 @@ def validate_experiment_dict(
     if "data_root" in ds:
         raise ValueError(
             "dataset.data_root is no longer supported; set dataset.sequence_dir to the "
-            "absolute path of the trajectory directory (folder containing imu.csv)."
+            "trajectory directory path (absolute, or relative to workspace_root; folder containing imu.csv for tartanground)."
         )
     seq_raw = ds.get("sequence_dir")
     if not isinstance(seq_raw, str) or not str(seq_raw).strip():
         raise ValueError("dataset.sequence_dir must be a non-empty string")
-    seq_expanded = Path(str(seq_raw)).expanduser()
+    seq_expanded = Path(str(seq_raw).strip()).expanduser()
     if not seq_expanded.is_absolute():
-        raise ValueError(
-            f"dataset.sequence_dir must be an absolute path (tilde expansion is allowed); got {seq_raw!r}"
-        )
+        if workspace_root is None:
+            raise ValueError(
+                "dataset.sequence_dir is relative; pass workspace_root (repo root, e.g. "
+                f"the directory containing main.py) to resolve it. Got {seq_raw!r}"
+            )
+        ds["sequence_dir"] = str((workspace_root / seq_expanded).resolve())
 
     det = str(cfg["contact"]["detector"]).lower()
     if det not in ALLOWED_CONTACT_DETECTORS:
@@ -447,18 +452,23 @@ def _validate_dataset_paths(cfg: Mapping[str, Any]) -> None:
 # Does not validate existence; output_layout runs validate then resolve for the saved snapshot.
 
 
-def resolve_dataset_paths(cfg: dict[str, Any], _workspace_root: Path) -> dict[str, Any]:
+def resolve_dataset_paths(cfg: dict[str, Any], workspace_root: Path) -> dict[str, Any]:
     """
     Return a copy of ``cfg`` with ``dataset.sequence_dir`` canonicalized (``resolve()``),
     ``dataset.data_root`` removed if present, and no ``data_root`` in the saved dict.
+
+    ``sequence_dir`` may be absolute (after tilde expansion) or relative to ``workspace_root``
+    (same rule as in :func:`validate_experiment_dict`).
     """
     out = copy.deepcopy(cfg)
     ds = out["dataset"]
     ds.pop("data_root", None)
-    seq = Path(str(ds["sequence_dir"])).expanduser()
+    seq = Path(str(ds["sequence_dir"]).strip()).expanduser()
     if not seq.is_absolute():
-        raise ValueError("dataset.sequence_dir must be absolute before resolve_dataset_paths")
-    ds["sequence_dir"] = str(seq.resolve())
+        seq = (workspace_root / seq).resolve()
+    else:
+        seq = seq.resolve()
+    ds["sequence_dir"] = str(seq)
     return out
 
 
